@@ -1,0 +1,291 @@
+diff --git a/GPT_SoVITS/download.py b/GPT_SoVITS/download.py
+index fc4ead6..ed7cb71 100644
+--- a/GPT_SoVITS/download.py
++++ b/GPT_SoVITS/download.py
+@@ -1,6 +1,8 @@
+ import os
+ import sys
+ 
++raise SystemExit("[nix] automatic model download disabled")
++
+ now_dir = os.getcwd()
+ sys.path.insert(0, now_dir)
+ from text.g2pw import G2PWPinyin
+diff --git a/GPT_SoVITS/inference_webui.py b/GPT_SoVITS/inference_webui.py
+index 223d907..0257d09 100644
+--- a/GPT_SoVITS/inference_webui.py
++++ b/GPT_SoVITS/inference_webui.py
+@@ -13,6 +13,10 @@ activate_portable_runtime(change_cwd=True)
+ import psutil
+ import os
+ 
++os.environ.setdefault("HF_HUB_OFFLINE", "1")
++os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
++os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
++
+ def set_high_priority():
+     """把当前 Python 进程设为 HIGH_PRIORITY_CLASS"""
+     if os.name != "nt":
+diff --git a/GPT_SoVITS/text/g2pw/onnx_api.py b/GPT_SoVITS/text/g2pw/onnx_api.py
+index 3c2b016..1f55ffa 100644
+--- a/GPT_SoVITS/text/g2pw/onnx_api.py
++++ b/GPT_SoVITS/text/g2pw/onnx_api.py
+@@ -73,25 +73,10 @@ def _find_first_existing_file(*paths: str) -> str:
+ 
+ def download_and_decompress(model_dir: str = "G2PWModel/"):
+     if not os.path.exists(model_dir):
+-        parent_directory = os.path.dirname(model_dir)
+-        zip_dir = os.path.join(parent_directory, "G2PWModel_1.1.zip")
+-        extract_dir = os.path.join(parent_directory, "G2PWModel_1.1")
+-        extract_dir_new = os.path.join(parent_directory, "G2PWModel")
+-        print("Downloading g2pw model...")
+-        modelscope_url = "https://www.modelscope.cn/models/kamiorinn/g2pw/resolve/master/G2PWModel_1.1.zip"
+-        with requests.get(modelscope_url, stream=True) as r:
+-            r.raise_for_status()
+-            with open(zip_dir, "wb") as f:
+-                for chunk in r.iter_content(chunk_size=8192):
+-                    if chunk:
+-                        f.write(chunk)
+-
+-        print("Extracting g2pw model...")
+-        with zipfile.ZipFile(zip_dir, "r") as zip_ref:
+-            zip_ref.extractall(parent_directory)
+-
+-        os.rename(extract_dir, extract_dir_new)
+-
++        print("[nix] automatic model download disabled")
++        raise FileNotFoundError(
++            f"missing {model_dir}"
++        )
+     return model_dir
+ 
+ 
+diff --git a/api_v2.py b/api_v2.py
+index 8a343ad..c9817fd 100644
+--- a/api_v2.py
++++ b/api_v2.py
+@@ -110,6 +110,10 @@ import sys
+ import traceback
+ from typing import Generator, Union, Optional
+ 
++os.environ.setdefault("HF_HUB_OFFLINE", "1")
++os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
++os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
++
+ now_dir = os.getcwd()
+ sys.path.append(now_dir)
+ sys.path.append("%s/GPT_SoVITS" % (now_dir))
+diff --git a/tools/asr/fasterwhisper_asr.py b/tools/asr/fasterwhisper_asr.py
+index 927230d..935309c 100644
+--- a/tools/asr/fasterwhisper_asr.py
++++ b/tools/asr/fasterwhisper_asr.py
+@@ -40,64 +40,23 @@ language_code_list = [
+ 
+ 
+ def download_model(model_size: str):
+-    url = "https://huggingface.co/api/models/gpt2"
+-    try:
+-        requests.get(url, timeout=3)
+-        source = "HF"
+-    except Exception:
+-        source = "ModelScope"
+-
+     model_path = ""
+-    if source == "HF":
+-        if "distil" in model_size:
+-            if "3.5" in model_size:
+-                repo_id = "distil-whisper/distil-large-v3.5-ct2"
+-                model_path = "tools/asr/models/faster-distil-whisper-large-v3.5"
+-            else:
+-                repo_id = "Systran/faster-{}-whisper-{}".format(*model_size.split("-", maxsplit=1))
+-        elif model_size == "large-v3-turbo":
+-            repo_id = "mobiuslabsgmbh/faster-whisper-large-v3-turbo"
+-            model_path = "tools/asr/models/faster-whisper-large-v3-turbo"
++    if "distil" in model_size:
++        if "3.5" in model_size:
++            repo_id = "distil-whisper/distil-large-v3.5-ct2"
++            model_path = "tools/asr/models/faster-distil-whisper-large-v3.5"
+         else:
+-            repo_id = f"Systran/faster-whisper-{model_size}"
+-        model_path = (
+-            model_path or f"tools/asr/models/{repo_id.replace('Systran/', '').replace('distil-whisper/', '', 1)}"
+-        )
+-    else:
+-        repo_id = "XXXXRT/faster-whisper"
+-        model_path = "tools/asr/models"
+-
+-    files: list[str] = [
+-        "config.json",
+-        "model.bin",
+-        "tokenizer.json",
+-        "vocabulary.txt",
+-    ]
+-    if "large-v3" in model_size or "distil" in model_size:
+-        files.append("preprocessor_config.json")
+-        files.append("vocabulary.json")
+-
+-        files.remove("vocabulary.txt")
+-
+-    if source == "ModelScope":
+-        files = [f"faster-whisper-{model_size}/{file}".replace("whisper-distil", "distil-whisper") for file in files]
+-
+-    if source == "HF":
+-        print(f"Downloading model from HuggingFace: {repo_id} to {model_path}")
+-        snapshot_download_hf(
+-            repo_id,
+-            local_dir=model_path,
+-            local_dir_use_symlinks=False,
+-            allow_patterns=files,
+-        )
++            repo_id = "Systran/faster-{}-whisper-{}".format(*model_size.split("-", maxsplit=1))
++    elif model_size == "large-v3-turbo":
++        repo_id = "mobiuslabsgmbh/faster-whisper-large-v3-turbo"
++        model_path = "tools/asr/models/faster-whisper-large-v3-turbo"
+     else:
+-        print(f"Downloading model from ModelScope: {repo_id} to {model_path}")
+-        snapshot_download_ms(
+-            repo_id,
+-            local_dir=model_path,
+-            allow_patterns=files,
+-        )
+-        return model_path + f"/faster-whisper-{model_size}".replace("whisper-distil", "distil-whisper")
++        repo_id = f"Systran/faster-whisper-{model_size}"
++    model_path = model_path or f"tools/asr/models/{repo_id.replace('Systran/', '').replace('distil-whisper/', '', 1)}"
++
++    if not os.path.exists(model_path):
++        print("[nix] automatic model download disabled")
++        raise RuntimeError(f"missing {model_path}")
+     return model_path
+ 
+ 
+diff --git a/tools/asr/funasr_asr.py b/tools/asr/funasr_asr.py
+index 56d5336..9676ff5 100644
+--- a/tools/asr/funasr_asr.py
++++ b/tools/asr/funasr_asr.py
+@@ -5,7 +5,6 @@ import os
+ import traceback
+ 
+ from funasr import AutoModel
+-from modelscope import snapshot_download
+ from tqdm import tqdm
+ 
+ funasr_models = {}  # 存储模型避免重复加载
+@@ -14,6 +13,7 @@ FUN_ASR_NANO_MODEL_SOURCES = (
+     {"model": FUN_ASR_NANO_MODEL_ID, "hub": "hf", "trust_remote_code": True},
+     {"model": FUN_ASR_NANO_MODEL_ID, "hub": "ms", "trust_remote_code": False},
+ )
++LOCAL_VAD_MODEL = "tools/asr/models/speech_fsmn_vad_zh-cn-16k-common-pytorch"
+ 
+ 
+ def only_asr(input_file, language, backend="fun-asr-nano"):
+@@ -32,13 +32,20 @@ def is_unregistered_model_error(exc):
+ 
+ 
+ def create_fun_asr_nano_model(device):
++    if not os.path.exists(LOCAL_VAD_MODEL):
++        print("[nix] automatic model download disabled")
++        raise FileNotFoundError(f"missing {LOCAL_VAD_MODEL}")
+     common_kwargs = dict(
+-        vad_model="fsmn-vad",
++        vad_model=LOCAL_VAD_MODEL,
+         device=device,
+         disable_update=True,
+     )
+     last_error = None
+     for model_source in FUN_ASR_NANO_MODEL_SOURCES:
++        model_ref = model_source["model"]
++        if not os.path.exists(model_ref):
++            print("[nix] automatic model download disabled")
++            raise FileNotFoundError(f"missing {model_ref}")
+         try:
+             return AutoModel(**model_source, **common_kwargs)
+         except (KeyError, RuntimeError, ValueError) as exc:
+@@ -64,9 +71,15 @@ def create_model(language="zh", **kwargs):
+             model = create_fun_asr_nano_model(device)
+             print(f"FunASR Fun-ASR-Nano 模型加载完成: {language.upper()}")
+         else:
++            if not os.path.exists("iic/SenseVoiceSmall"):
++                print("[nix] automatic model download disabled")
++                raise FileNotFoundError("missing iic/SenseVoiceSmall")
++            if not os.path.exists(LOCAL_VAD_MODEL):
++                print("[nix] automatic model download disabled")
++                raise FileNotFoundError(f"missing {LOCAL_VAD_MODEL}")
+             model = AutoModel(
+                 model="iic/SenseVoiceSmall",
+-                vad_model="fsmn-vad",
++                vad_model=LOCAL_VAD_MODEL,
+                 device=device,
+                 disable_update=True,
+             )
+@@ -79,26 +92,17 @@ def create_model(language="zh", **kwargs):
+         path_vad = "tools/asr/models/speech_fsmn_vad_zh-cn-16k-common-pytorch"
+         path_punc = "tools/asr/models/punc_ct-transformer_zh-cn-common-vocab272727-pytorch"
+         path_asr = "tools/asr/models/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
+-        snapshot_download(
+-            "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
+-            local_dir="tools/asr/models/speech_fsmn_vad_zh-cn-16k-common-pytorch",
+-        )
+-        snapshot_download(
+-            "iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch",
+-            local_dir="tools/asr/models/punc_ct-transformer_zh-cn-common-vocab272727-pytorch",
+-        )
+-        snapshot_download(
+-            "iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
+-            local_dir="tools/asr/models/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
+-        )
++        for _local_path in (path_vad, path_punc, path_asr):
++            if not os.path.exists(_local_path):
++                print("[nix] automatic model download disabled")
++                raise FileNotFoundError(f"missing {_local_path}")
+         model_revision = "v2.0.4"
+         vad_model_revision = punc_model_revision = "v2.0.4"
+     elif language == "yue":
+         path_asr = "tools/asr/models/speech_UniASR_asr_2pass-cantonese-CHS-16k-common-vocab1468-tensorflow1-online"
+-        snapshot_download(
+-            "iic/speech_UniASR_asr_2pass-cantonese-CHS-16k-common-vocab1468-tensorflow1-online",
+-            local_dir="tools/asr/models/speech_UniASR_asr_2pass-cantonese-CHS-16k-common-vocab1468-tensorflow1-online",
+-        )
++        if not os.path.exists(path_asr):
++            print("[nix] automatic model download disabled")
++            raise FileNotFoundError(f"missing {path_asr}")
+         path_vad = path_punc = None
+         vad_model_revision = punc_model_revision = ""
+         model_revision = "master"
+@@ -115,6 +119,7 @@ def create_model(language="zh", **kwargs):
+             vad_model_revision=vad_model_revision,
+             punc_model=path_punc,
+             punc_model_revision=punc_model_revision,
++            disable_update=True,
+         )
+         print(f"FunASR 模型加载完成: {language.upper()}")
+ 
+diff --git a/tools/cmd-denoise.py b/tools/cmd-denoise.py
+index bbf6847..419df2b 100644
+--- a/tools/cmd-denoise.py
++++ b/tools/cmd-denoise.py
+@@ -7,7 +7,9 @@ from modelscope.utils.constant import Tasks
+ from tqdm import tqdm
+ 
+ path_denoise = "tools/denoise-model/speech_frcrn_ans_cirm_16k"
+-path_denoise = path_denoise if os.path.exists(path_denoise) else "damo/speech_frcrn_ans_cirm_16k"
++if not os.path.exists(path_denoise):
++    print("[nix] automatic model download disabled")
++    raise FileNotFoundError(f"missing {path_denoise}")
+ ans = pipeline(Tasks.acoustic_noise_suppression, model=path_denoise)
+ 
+ 
+diff --git a/webui.py b/webui.py
+index de56cf0..8c65c61 100644
+--- a/webui.py
++++ b/webui.py
+@@ -1,6 +1,10 @@
+ import os
+ import sys
+ 
++os.environ.setdefault("HF_HUB_OFFLINE", "1")
++os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
++os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
++
+ os.environ["version"] = version = "v2Pro"
+ now_dir = os.getcwd()
+ sys.path.insert(0, now_dir)
