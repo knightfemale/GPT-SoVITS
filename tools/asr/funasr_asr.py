@@ -5,7 +5,6 @@ import os
 import traceback
 
 from funasr import AutoModel
-from modelscope import snapshot_download
 from tqdm import tqdm
 
 funasr_models = {}  # 存储模型避免重复加载
@@ -14,6 +13,7 @@ FUN_ASR_NANO_MODEL_SOURCES = (
     {"model": FUN_ASR_NANO_MODEL_ID, "hub": "hf", "trust_remote_code": True},
     {"model": FUN_ASR_NANO_MODEL_ID, "hub": "ms", "trust_remote_code": False},
 )
+LOCAL_VAD_MODEL = "tools/asr/models/speech_fsmn_vad_zh-cn-16k-common-pytorch"
 
 
 def only_asr(input_file, language, backend="fun-asr-nano"):
@@ -32,13 +32,20 @@ def is_unregistered_model_error(exc):
 
 
 def create_fun_asr_nano_model(device):
+    if not os.path.exists(LOCAL_VAD_MODEL):
+        print("[nix] automatic model download disabled")
+        raise FileNotFoundError(f"missing {LOCAL_VAD_MODEL}")
     common_kwargs = dict(
-        vad_model="fsmn-vad",
+        vad_model=LOCAL_VAD_MODEL,
         device=device,
         disable_update=True,
     )
     last_error = None
     for model_source in FUN_ASR_NANO_MODEL_SOURCES:
+        model_ref = model_source["model"]
+        if not os.path.exists(model_ref):
+            print("[nix] automatic model download disabled")
+            raise FileNotFoundError(f"missing {model_ref}")
         try:
             return AutoModel(**model_source, **common_kwargs)
         except (KeyError, RuntimeError, ValueError) as exc:
@@ -64,9 +71,15 @@ def create_model(language="zh", **kwargs):
             model = create_fun_asr_nano_model(device)
             print(f"FunASR Fun-ASR-Nano 模型加载完成: {language.upper()}")
         else:
+            if not os.path.exists("iic/SenseVoiceSmall"):
+                print("[nix] automatic model download disabled")
+                raise FileNotFoundError("missing iic/SenseVoiceSmall")
+            if not os.path.exists(LOCAL_VAD_MODEL):
+                print("[nix] automatic model download disabled")
+                raise FileNotFoundError(f"missing {LOCAL_VAD_MODEL}")
             model = AutoModel(
                 model="iic/SenseVoiceSmall",
-                vad_model="fsmn-vad",
+                vad_model=LOCAL_VAD_MODEL,
                 device=device,
                 disable_update=True,
             )
@@ -79,26 +92,17 @@ def create_model(language="zh", **kwargs):
         path_vad = "tools/asr/models/speech_fsmn_vad_zh-cn-16k-common-pytorch"
         path_punc = "tools/asr/models/punc_ct-transformer_zh-cn-common-vocab272727-pytorch"
         path_asr = "tools/asr/models/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
-        snapshot_download(
-            "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
-            local_dir="tools/asr/models/speech_fsmn_vad_zh-cn-16k-common-pytorch",
-        )
-        snapshot_download(
-            "iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch",
-            local_dir="tools/asr/models/punc_ct-transformer_zh-cn-common-vocab272727-pytorch",
-        )
-        snapshot_download(
-            "iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
-            local_dir="tools/asr/models/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
-        )
+        for _local_path in (path_vad, path_punc, path_asr):
+            if not os.path.exists(_local_path):
+                print("[nix] automatic model download disabled")
+                raise FileNotFoundError(f"missing {_local_path}")
         model_revision = "v2.0.4"
         vad_model_revision = punc_model_revision = "v2.0.4"
     elif language == "yue":
         path_asr = "tools/asr/models/speech_UniASR_asr_2pass-cantonese-CHS-16k-common-vocab1468-tensorflow1-online"
-        snapshot_download(
-            "iic/speech_UniASR_asr_2pass-cantonese-CHS-16k-common-vocab1468-tensorflow1-online",
-            local_dir="tools/asr/models/speech_UniASR_asr_2pass-cantonese-CHS-16k-common-vocab1468-tensorflow1-online",
-        )
+        if not os.path.exists(path_asr):
+            print("[nix] automatic model download disabled")
+            raise FileNotFoundError(f"missing {path_asr}")
         path_vad = path_punc = None
         vad_model_revision = punc_model_revision = ""
         model_revision = "master"
@@ -115,6 +119,7 @@ def create_model(language="zh", **kwargs):
             vad_model_revision=vad_model_revision,
             punc_model=path_punc,
             punc_model_revision=punc_model_revision,
+            disable_update=True,
         )
         print(f"FunASR 模型加载完成: {language.upper()}")
 

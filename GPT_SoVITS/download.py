@@ -1,6 +1,8 @@
 import os
 import sys
 
+raise SystemExit("[nix] automatic model download disabled")
+
 now_dir = os.getcwd()
 sys.path.insert(0, now_dir)
 from text.g2pw import G2PWPinyin

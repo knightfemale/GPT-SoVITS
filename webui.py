@@ -1,6 +1,10 @@
 import os
 import sys
 
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
+
 os.environ["version"] = version = "v2Pro"
 now_dir = os.getcwd()
 sys.path.insert(0, now_dir)

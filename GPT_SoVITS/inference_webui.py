@@ -13,6 +13,10 @@ activate_portable_runtime(change_cwd=True)
 import psutil
 import os
 
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
+
 def set_high_priority():
     """把当前 Python 进程设为 HIGH_PRIORITY_CLASS"""
     if os.name != "nt":

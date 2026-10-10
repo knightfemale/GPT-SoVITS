@@ -7,7 +7,9 @@ from modelscope.utils.constant import Tasks
 from tqdm import tqdm
 
 path_denoise = "tools/denoise-model/speech_frcrn_ans_cirm_16k"
-path_denoise = path_denoise if os.path.exists(path_denoise) else "damo/speech_frcrn_ans_cirm_16k"
+if not os.path.exists(path_denoise):
+    print("[nix] automatic model download disabled")
+    raise FileNotFoundError(f"missing {path_denoise}")
 ans = pipeline(Tasks.acoustic_noise_suppression, model=path_denoise)
 
 
