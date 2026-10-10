@@ -44,18 +44,6 @@ if site_packages_roots == []:
 # os.environ["OPENBLAS_NUM_THREADS"] = "4"
 os.environ["no_proxy"] = "localhost, 127.0.0.1, ::1"
 os.environ["all_proxy"] = ""
-for site_packages_root in site_packages_roots:
-    if os.path.exists(site_packages_root):
-        try:
-            with open("%s/users.pth" % (site_packages_root), "w") as f:
-                f.write(
-                    # "%s\n%s/runtime\n%s/tools\n%s/tools/asr\n%s/GPT_SoVITS\n%s/tools/uvr5"
-                    "%s\n%s/GPT_SoVITS/BigVGAN\n%s/tools\n%s/tools/asr\n%s/GPT_SoVITS\n%s/tools/uvr5"
-                    % (now_dir, now_dir, now_dir, now_dir, now_dir, now_dir)
-                )
-            break
-        except PermissionError:
-            traceback.print_exc()
 import shutil
 import subprocess
 from subprocess import Popen
