@@ -1,11 +1,12 @@
 # 可运行的 GPT-SoVITS app 派生。
 #
 # 把仓库源码（本文件相对路径的 ../../..）打包进 store，再基于 pythonEnv 用
-# makeWrapper 生成 $out/bin/{gpt-sovits-webui,gpt-sovits-api,gpt-sovits-inference}。
-# 每个 wrapper：
+# makeWrapper 生成唯一的 $out/bin/gpt-sovits-webui-ng（单进程 FastAPI + React SPA）。
+# wrapper：
 #   - 解释器固定为 ${pythonEnv}/bin/python；
 #   - 把 pythonEnv/bin 前缀进 PATH（子进程再次调用 `python` 时命中同一环境）；
-#   - 运行前 cd 到源码目录（相对 import/资源路径依赖 cwd）；
+#   - 运行前 cd 到源码目录（只读 store 代码根，相对 import/资源路径依赖 cwd），
+#     运行期数据目录经 GPT_SOVITS_DATA_DIR 暴露，并设置 PYTHONPATH；
 #   - "$@" 透传由 makeWrapper 自动追加在 --add-flags 之后。
 {
   lib,
@@ -18,47 +19,55 @@
 let
   # 仓库根：nix/packages/gpt-sovits -> nix/packages -> nix -> 仓库根。
   # 过滤规则（全部走 lib.cleanSourceWith 的 filter，目录被排除时不会递归）：
-  #   .git / .direnv / .venv / __pycache__ / nix / result*
+  #   * 任意深度：VCS/缓存/构建目录（.git/.direnv/.venv/__pycache__/nix 等）；
+  #   * 仅仓库顶层：运行期数据目录/文件 —— 源码里可能存在同名子目录，绝不能误删，
+  #     例如 `GPT_SoVITS/AR/models` 是源码而非数据；
+  #   * `web/dist`：前端构建产物。
   isExcluded =
     path: type:
     let
+      root = toString ../../..;
+      rel = lib.removePrefix "/" (lib.removePrefix root (toString path));
       base = baseNameOf (toString path);
-    in
-    !(
-      builtins.elem base [
+      anyDepth = builtins.elem base [
         ".git"
         ".direnv"
         ".venv"
         "__pycache__"
         "nix"
-      ]
-      || lib.hasPrefix "result" base
-    );
+        "node_modules"
+        ".vite"
+      ];
+      topOnly = builtins.elem rel [
+        "logs"
+        "output"
+        "dataset"
+        "TEMP"
+        "references"
+        "models"
+        "train"
+        "tmp"
+        "huggingface"
+        "modelscope"
+        "onnx"
+        "onnx_export"
+        "webui_ng_references.json"
+        "webui_ng_settings.json"
+      ];
+      webDist = rel == "web/dist" || lib.hasPrefix "web/dist/" rel;
+      # `result`/`result-*` 是仓库根的 nix build 软链；按 rel 精确匹配，
+      # 避免误删源码里以 "result" 开头的文件（如 web/src/lib/results.ts）。
+      resultLink = rel == "result" || lib.hasPrefix "result-" rel;
+    in
+    !(anyDepth || topOnly || webDist || resultLink);
 
-  # 仓库源码（先过滤掉 .git/.direnv/…/nix/result*）。
-  cleanSource = lib.cleanSourceWith {
+  # 仓库源码（过滤掉 .git/.direnv/…/nix/result*）。
+  # 禁用自动下载等改动已**直接内联到源码**，不再需要 patches。
+  source = lib.cleanSourceWith {
     name = "gpt-sovits-source";
     src = ../../..;
     filter = path: type: isExcluded path type;
   };
-
-  source = pkgs.applyPatches {
-    name = "gpt-sovits-source";
-    src = cleanSource;
-    patches = [
-      # 只读 site-packages（Nix store）无法写 users.pth，禁用 webui.py 里那段
-      # 写 users.pth 的逻辑；项目 import 路径改由 wrapper/devShell 的 PYTHONPATH 提供。
-      ./patches/0001-disable-users-pth.patch
-      # 禁用一切运行期自动下载模型（g2pw / BERT / BigVGAN / denoise / funasr /
-      # faster-whisper），缺失模型时以明确异常失败，绝不联网。
-      ./patches/0002-disable-model-download.patch
-    ];
-  };
-
-  # 运行前切换到可写工作目录：设置了 GPT_SOVITS_WORKDIR 时切到该目录（上层
-  # 服务会把源码播种到那里，微调模型/output/日志的写入都不会碰只读 store），
-  # 否则退回只读源码目录（仅适合不写盘的用法）。
-  chdirRun = "cd \"\${GPT_SOVITS_WORKDIR:-${source}}\" && export PYTHONPATH=\"$PWD:$PWD/GPT_SoVITS/BigVGAN:$PWD/tools:$PWD/tools/asr:$PWD/GPT_SoVITS:$PWD/tools/uvr5\${PYTHONPATH:+:$PYTHONPATH}\"";
 
   # GPU（WSL CUDA）下补上驱动库路径：预编译 CUDA wheels 需要 libcuda.so。
   # WSL 把驱动放在 /usr/lib/wsl/lib（不在 ldconfig 默认搜索路径内），
@@ -71,7 +80,16 @@ let
     done
   '';
 
-  runScript = chdirRun + lib.optionalString (acceleration == "cuda") ("\n" + driverLibPath);
+  # 运行前切到只读 store 源码根（cwd=代码根，所有代码/脚本/config 的 cwd 相对
+  # 路径天然解析）；运行期数据目录经 GPT_SOVITS_DATA_DIR 暴露给进程（默认回退到
+  # 旧的 GPT_SOVITS_WORKDIR，再回退到源码根）；webui_ng 经 `python -m webui_ng.app`
+  # 启动。
+  ngRun = "cd ${source} && export GPT_SOVITS_DATA_DIR=\"\${GPT_SOVITS_DATA_DIR:-\${GPT_SOVITS_WORKDIR:-${source}}}\" && export PYTHONPATH=\"$PWD/src:$PWD:$PWD/GPT_SoVITS/BigVGAN:$PWD/tools:$PWD/tools/asr:$PWD/GPT_SoVITS:$PWD/tools/uvr5\${PYTHONPATH:+:$PYTHONPATH}\"";
+
+  ngRunScript = ngRun + lib.optionalString (acceleration == "cuda") ("\n" + driverLibPath);
+
+  # 前端构建产物（index.html + assets/），运行时经 GPT_SOVITS_WEB_DIST 提供。
+  web = pkgs.callPackage ./web.nix { };
 in
 pkgs.stdenvNoCC.mkDerivation {
   pname = "gpt-sovits";
@@ -89,34 +107,28 @@ pkgs.stdenvNoCC.mkDerivation {
 
     mkdir -p $out/bin
 
-    makeWrapper ${pythonEnv}/bin/python $out/bin/gpt-sovits-webui \
-      --add-flags "webui.py" \
+    # 唯一入口：单进程 FastAPI（webui_ng）+ 前端静态资源（web）。
+    makeWrapper ${pythonEnv}/bin/python $out/bin/gpt-sovits-webui-ng \
+      --add-flags "-m webui_ng.app" \
       --prefix PATH : "${pythonEnv}/bin" \
-      --run '${runScript}'
-
-    makeWrapper ${pythonEnv}/bin/python $out/bin/gpt-sovits-api \
-      --add-flags "api_v2.py" \
-      --prefix PATH : "${pythonEnv}/bin" \
-      --run '${runScript}'
-
-    makeWrapper ${pythonEnv}/bin/python $out/bin/gpt-sovits-inference \
-      --add-flags "GPT_SoVITS/inference_webui.py" \
-      --prefix PATH : "${pythonEnv}/bin" \
-      --run '${runScript}'
+      --set GPT_SOVITS_WEB_DIST "${web}" \
+      --run '${ngRunScript}'
 
     runHook postInstall
   '';
 
   passthru = {
-    # 供 NixOS 模块把只读源码播种到可写数据目录（见 nix/nixosModules）。
+    # 只读打包源码根（运行的 cwd / PYTHONPATH 基）。
     inherit source;
+    # 前端构建产物，供需要单独引用 SPA 的场合。
+    inherit web;
   };
 
   meta = {
-    description = "GPT-SoVITS webui / api / inference launchers";
+    description = "GPT-SoVITS webui-ng (single-process FastAPI + React SPA) launcher";
     homepage = "https://github.com/RVC-Boss/GPT-SoVITS";
     license = lib.licenses.mit;
-    mainProgram = "gpt-sovits-webui";
+    mainProgram = "gpt-sovits-webui-ng";
     platforms = lib.platforms.linux;
   };
 }

@@ -7,8 +7,20 @@ jieba.setLogLevel(logging.CRITICAL)
 
 # 更改fast_langdetect大模型位置
 from pathlib import Path
+import os
 import fast_langdetect
-fast_langdetect.infer._default_detector = fast_langdetect.infer.LangDetector(fast_langdetect.infer.LangDetectConfig(cache_dir=Path(__file__).parent.parent.parent / "pretrained_models" / "fast_langdetect"))
+
+# 该目录既是模型资产（lid.176.bin，随 catalog 安装）也是 fast_langdetect 的缓存
+# 目录：设 GPT_SOVITS_DATA_DIR 时指向数据根，未设时保持上游的代码旁相对位置。
+_data_root = os.environ.get("GPT_SOVITS_DATA_DIR")
+_fast_langdetect_dir = os.environ.get("GPT_SOVITS_FAST_LANGDETECT_DIR")
+if not _fast_langdetect_dir:
+    _fast_langdetect_dir = (
+        str(Path(os.path.abspath(_data_root)) / "models" / "pretrained_models" / "fast_langdetect")
+        if _data_root
+        else str(Path(__file__).parent.parent.parent / "pretrained_models" / "fast_langdetect")
+    )
+fast_langdetect.infer._default_detector = fast_langdetect.infer.LangDetector(fast_langdetect.infer.LangDetectConfig(cache_dir=_fast_langdetect_dir))
 
 
 from split_lang import LangSplitter

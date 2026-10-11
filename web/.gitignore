@@ -1,0 +1,12 @@
+node_modules
+dist
+dist-ssr
+.vite
+*.local
+*.log
+.DS_Store
+
+# `src/lib` 是应用源码，不是 Python packaging 产物；
+# 覆盖根 `.gitignore` 的 `lib/` 规则（下层 .gitignore 优先生效）。
+!src/lib/
+!src/lib/**

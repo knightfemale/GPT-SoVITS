@@ -12,35 +12,13 @@ let
 
   system = pkgs.stdenv.hostPlatform.system;
 
-  # The runnable program exported by this flake. It provides
-  # bin/gpt-sovits-webui, bin/gpt-sovits-api and bin/gpt-sovits-inference.
+  # The runnable program exported by this flake. It provides the single
+  # bin/gpt-sovits-webui-ng entrypoint.
   # `acceleration` selects the CPU or the CUDA (prebuilt wheels) variant;
   # an explicit `package` overrides this entirely.
   defaultPackage = inputs.self.packages.${system}.gpt-sovits.override {
     inherit (cfg) acceleration;
   };
-
-  # Entrypoint binary selected by `backend`.
-  backendBinary =
-    {
-      api = "gpt-sovits-api";
-      webui = "gpt-sovits-webui";
-      inference = "gpt-sovits-inference";
-    }
-    .${cfg.backend};
-
-  # Only the API entrypoint takes host/port flags; the WebUI variants read
-  # their listening port from the runtime config instead.
-  backendArgs =
-    if cfg.backend == "api" then
-      [
-        "-a"
-        cfg.host
-        "-p"
-        (toString cfg.port)
-      ]
-    else
-      [ ];
 
   # By default a StateDirectory is used; anything else needs its own directory
   # and a hole in the unit's mount namespace.
@@ -49,8 +27,8 @@ let
   # Static catalogue of the pretrained models (data only, no `pkgs` needed).
   # Scope: TTS inference/fine-tuning weights only. The auxiliary toolboxes
   # (ASR / faster-whisper / uvr5 / nltk_data / open_jtalk) are intentionally NOT
-  # covered here; patch 0002 makes their runtime downloads a hard local-path
-  # error, so they stay offline but need user-supplied data to function.
+  # covered here; the inlined download guards make their runtime downloads a
+  # hard local-path error, so they stay offline but need user-supplied data.
   catalog = import ./model-catalog.nix { inherit lib; };
 
   # --- model selection ---------------------------------------------------
@@ -164,11 +142,16 @@ let
     ln -sn ${lib.escapeShellArg "${x.drv}"} ${lib.escapeShellArg "${cfg.dataDir}/${x.installPath}/${x.name}"}
   '') allItems;
 
-  # Remove all symlinks pointing into /nix/store below each managed install
-  # path before relinking, so no stale links are left behind after an update.
+  # Remove stale store symlinks below the managed install paths before relinking
+  # so no stale links are left behind after an upgrade. ONLY dirs under
+  # `models/**` are swept; other install paths (e.g. `g2pw`) are handled by
+  # `modelSymlinks`, which removes the exact entry it recreates.
   staleSymlinkSweep = lib.concatMapStringsSep "\n" (p: ''
-    if [[ -d ${lib.escapeShellArg "${cfg.dataDir}/${p}"} ]]; then
-      readarray -d "" stale < <(find ${lib.escapeShellArg "${cfg.dataDir}/${p}"} -type l -print0)
+    dstReal="$(readlink -f ${lib.escapeShellArg cfg.dataDir} 2>/dev/null || true)"
+    real="$(readlink -f ${lib.escapeShellArg "${cfg.dataDir}/${p}"} 2>/dev/null || true)"
+    if [[ -n "$real" && -d "$real" && -n "$dstReal" && "$real" == "$dstReal"/models/* ]]; then
+      stale=()
+      readarray -d "" stale < <(find "$real" -type l -print0)
       for link in "''${stale[@]}"; do
         if [[ "$(readlink "$link")" == ${lib.escapeShellArg builtins.storeDir}/* ]]; then
           rm "$link"
@@ -183,14 +166,63 @@ let
   ];
 
   # Read-only packaged source exported by the app derivation (`passthru.source`).
-  # It is seeded into the writable dataDir on first start so the service can
-  # write fine-tuned models / outputs / logs next to the code.
+  # It is the app's cwd / code root; the service never writes into it.
   packageSource = cfg.package.source or null;
 
-  # Marker recording which packaged source path was last seeded into dataDir.
-  # Its content is the store path of `packageSource`, so a package upgrade
-  # (new store path) is detected and the source is re-filled.
-  seedMarker = "${cfg.dataDir}/.gpt-sovits-seeded";
+  # ---- Writable runtime layout (see `runtimeLayout` below) ----
+  #
+  # The app runs directly from the read-only store source (wrapper `cd`), so cwd
+  # carries no data. All writable runtime state lives under dataDir and is
+  # exposed to the process via `GPT_SOVITS_DATA_DIR`, in a consolidated layout:
+  #
+  #   models/  <- pretrained_models + SoVITS_weights*/ + GPT_weights*/ + uvr5_weights
+  #   train/   <- dataset/ + logs/
+  #   output/  <- generated audio
+  #   tmp/ references/ g2pw/ huggingface/ modelscope/
+  #
+  # The wrapper/Python code resolves these through config.py, so no cwd farming is
+  # required.
+  weightDirs = [
+    "SoVITS_weights"
+    "SoVITS_weights_v2"
+    "SoVITS_weights_v3"
+    "SoVITS_weights_v4"
+    "SoVITS_weights_v5dev"
+    "SoVITS_weights_v5turbo"
+    "SoVITS_weights_v2Pro"
+    "SoVITS_weights_v2ProPlus"
+    "GPT_weights"
+    "GPT_weights_v2"
+    "GPT_weights_v3"
+    "GPT_weights_v4"
+    "GPT_weights_v5dev"
+    "GPT_weights_v5turbo"
+    "GPT_weights_v2Pro"
+    "GPT_weights_v2ProPlus"
+  ];
+
+  # Top-level source entries are NOT farmed here anymore: the app runs directly
+  # from the read-only store source (wrapper `cd ${source}`), and all writable
+  # runtime state lives under `dataDir` via `GPT_SOVITS_DATA_DIR`.
+
+  # Materialise the writable runtime dirs under dataDir. Idempotent and
+  # non-destructive: only `mkdir -p` (no farm/relink/copy), so user data is
+  # never touched. The code itself runs from the read-only store source.
+  runtimeLayout = lib.optionalString (packageSource != null) (
+    let
+      q = lib.escapeShellArg;
+      weights = lib.concatStringsSep " " (map q weightDirs);
+    in
+    ''
+      dst=${q cfg.dataDir}
+      mkdir -p "$dst"/models/pretrained_models "$dst"/models/uvr5_weights \
+        "$dst"/train/dataset "$dst"/train/logs \
+        "$dst"/output "$dst"/tmp "$dst"/tmp/ja_userdic \
+        "$dst"/references "$dst"/configs "$dst"/g2pw \
+        "$dst"/huggingface "$dst"/modelscope
+      for w in ${weights}; do mkdir -p "$dst/models/$w"; done
+    ''
+  );
 
   # A configured relative path is unsafe when it is absolute or contains a `..`
   # component; either would let the created link escape dataDir.
@@ -219,34 +251,13 @@ in
       '';
     };
 
-    backend = lib.mkOption {
-      type = lib.types.enum [
-        "api"
-        "webui"
-        "inference"
-      ];
-      default = "webui";
-      description = ''
-        Which entrypoint the service runs:
-        - `"api"`:       `api_v2.py` — headless inference API; honors `host`/`port`.
-        - `"webui"`:     `webui.py` — full Gradio WebUI (training + inference + tools).
-        - `"inference"`: `GPT_SoVITS/inference_webui.py` — inference-only Gradio WebUI.
-
-        `host`/`port` (and therefore `openFirewall`) only apply to `"api"`.
-        The two WebUI variants bind `0.0.0.0` and take their listening port from
-        the runtime config (`GPT_SoVITS/configs/tts_infer.yaml`); extra CLI
-        arguments can be passed through `extraArgs`.
-      '';
-    };
-
     package = lib.mkOption {
       type = lib.types.package;
       default = defaultPackage;
       defaultText = lib.literalExpression "inputs.self.packages.\${pkgs.stdenv.hostPlatform.system}.gpt-sovits.override { acceleration = ...; }";
       description = ''
-        The GPT-SoVITS package to run. It must provide
-        `bin/gpt-sovits-api`, `bin/gpt-sovits-webui` and
-        `bin/gpt-sovits-inference`.
+        The GPT-SoVITS package to run. It must provide the
+        `bin/gpt-sovits-webui-ng` entrypoint.
       '';
     };
 
@@ -324,8 +335,7 @@ in
         "normal"
       ];
       description = ''
-        Extra arguments appended to `bin/gpt-sovits-api`. See
-        `bin/gpt-sovits-api --help` for available flags.
+        Extra arguments appended to `bin/gpt-sovits-webui-ng`.
       '';
     };
 
@@ -366,8 +376,7 @@ in
                 Required. The target subdirectories below `dataDir` into which
                 the model is symlinked: for each path `p`, a symlink is created
                 at `<dataDir>/<p>/<name>`. Example values are
-                `GPT_SoVITS/pretrained_models/s1bert` or
-                `GPT_SoVITS/pretrained_models`.
+                `models/pretrained_models/s1bert` or `models/pretrained_models`.
 
                 Nested paths are allowed. A single string is upgraded to a
                 one-element list. One symlink is created per install path.
@@ -376,7 +385,7 @@ in
                 path and no `..` component), otherwise it could escape the data
                 directory.
               '';
-              example = [ "GPT_SoVITS/pretrained_models" ];
+              example = [ "models/pretrained_models" ];
             };
           };
         }
@@ -387,7 +396,7 @@ in
           name = "gsv-v4-pretrained.zip";
           url = "https://example.com/gsv-v4-pretrained.zip";
           hash = "sha256-AAAA...";
-          installPaths = "GPT_SoVITS/pretrained_models";
+          installPaths = "models/pretrained_models";
         } ]
       '';
       description = ''
@@ -505,6 +514,10 @@ in
       after = [ "network.target" ];
 
       preStart = ''
+        # Fail loudly: a broken link/mkdir must not leave a half-built tree that
+        # still "starts" (which would silently break G2PW/uvr5/asr paths).
+        set -euo pipefail
+
         ${lib.optionalString (packageSource == null) ''
           # A custom `services.gpt-sovits.package` may lack `passthru.source`;
           # in that case there is nothing to seed. Surface it instead of
@@ -512,20 +525,7 @@ in
           echo "warning: 自定义 package 未提供 passthru.source，跳过源码播种" >&2
         ''}
 
-        ${lib.optionalString (packageSource != null) ''
-          # Seed / refresh the writable working directory from the read-only
-          # packaged source. The marker stores the source store path: on an
-          # upgrade the path changes, so a refresh is triggered. The refresh
-          # only fills in missing files (`cp -n`) and NEVER overwrites files
-          # already present below dataDir (e.g. user-edited tts_infer.yaml or
-          # fine-tuned checkpoints), so runtime changes are preserved.
-          if [ ! -e ${lib.escapeShellArg seedMarker} ] \
-            || [ "$(cat ${lib.escapeShellArg seedMarker} 2>/dev/null)" != ${lib.escapeShellArg (toString packageSource)} ]; then
-            cp -r --no-preserve=mode -n ${lib.escapeShellArg (toString packageSource)}/. ${lib.escapeShellArg cfg.dataDir}/
-            printf '%s\n' ${lib.escapeShellArg (toString packageSource)} > ${lib.escapeShellArg seedMarker}
-            echo "gpt-sovits: 已按新源码补齐（保留既有文件）: ${toString packageSource}" >&2
-          fi
-        ''}
+        ${runtimeLayout}
 
         # Rebuild model symlinks, after clearing any stale ones pointing into
         # the Nix store from a previous generation.
@@ -535,13 +535,13 @@ in
       '';
 
       serviceConfig = {
-        ExecStart = lib.escapeShellArgs (
-          [ "${cfg.package}/bin/${backendBinary}" ] ++ backendArgs ++ cfg.extraArgs
-        );
+        ExecStart = lib.escapeShellArgs ([ "${cfg.package}/bin/gpt-sovits-webui-ng" ] ++ cfg.extraArgs);
 
         User = cfg.user;
         Group = cfg.group;
-        WorkingDirectory = cfg.dataDir;
+        # The launcher chdirs to the read-only store source itself (see the
+        # package wrapper); dataDir only holds writable runtime state.
+        WorkingDirectory = if packageSource != null then toString packageSource else cfg.dataDir;
         Type = "simple";
         Restart = "always";
         RestartSec = "5sec"; # don't crash loop immediately
@@ -568,8 +568,15 @@ in
           "TRANSFORMERS_OFFLINE=1"
           "HF_DATASETS_OFFLINE=1"
           "MODELSCOPE_OFFLINE=1"
-          # The launcher chdirs here; kept in sync with the seeding step above.
-          "GPT_SOVITS_WORKDIR=${cfg.dataDir}"
+          # The launcher chdirs to the read-only store source; all writable runtime
+          # state lives under dataDir, exposed to the app via GPT_SOVITS_DATA_DIR.
+          "PYTHONDONTWRITEBYTECODE=1"
+          "GPT_SOVITS_DATA_DIR=${cfg.dataDir}"
+        ]
+        ++ [
+          # webui_ng reads its bind address/port from the environment.
+          "GPT_SOVITS_WEBUI_HOST=${cfg.host}"
+          "GPT_SOVITS_WEBUI_PORT=${toString cfg.port}"
         ]
         ++ runtimeCaches;
 

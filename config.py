@@ -8,85 +8,106 @@ from tools.i18n.i18n import I18nAuto
 
 i18n = I18nAuto(language=os.environ.get("language", "Auto"))
 
+# --- 运行期数据根 ---------------------------------------------------------
+# 设 GPT_SOVITS_DATA_DIR 时启用「内聚布局」：代码从只读 store 运行，cwd 只放
+# 可写目录（models/ train/ output/ tmp/ configs/ references/）；未设时保持上游
+# 原有的 cwd 相对布局，不影响非 nix 用法。
+_DATA_ROOT = os.environ.get("GPT_SOVITS_DATA_DIR")
+if _DATA_ROOT:
+    _D = os.path.abspath(_DATA_ROOT).rstrip("/")
+    _MODELS = os.path.join(_D, "models")
+    _PRET = os.path.join(_MODELS, "pretrained_models")
+    _TRAIN = os.path.join(_D, "train")
+    _EXP = os.path.join(_TRAIN, "logs")
+    _DATASET = os.path.join(_TRAIN, "dataset")
+    _OUTPUT = os.path.join(_D, "output")
+    _TMP = os.path.join(_D, "tmp")
+    _CONFIGS = os.path.join(_D, "configs")
+    _REFS = os.path.join(_D, "references")
+else:
+    _MODELS = None
+    _PRET = "GPT_SoVITS/pretrained_models"
+    _EXP = "logs"
+    _DATASET = "dataset"
+    _OUTPUT = "output"
+    _TMP = "TEMP"
+    _CONFIGS = "GPT_SoVITS/configs"
+    _REFS = "references"
+
+
+def _pret(*parts):
+    """Path below the pretrained-models root (absolute in consolidated mode)."""
+    return os.path.join(_PRET, *parts)
+
+
+def _weight_root(kind, version):
+    """`SoVITS_weights`/`GPT_weights` (+ `_<version>`) below the models root."""
+    base = "SoVITS_weights" if kind == "sovits" else "GPT_weights"
+    name = base if version == "v1" else f"{base}_{version}"
+    return os.path.join(_MODELS, name) if _MODELS else name
+
+
+# 公开别名：webui_ng / tools 可直接引用这些根，避免各自拼 cwd 相对路径。
+project_root = os.path.dirname(os.path.abspath(__file__))
+data_root = _D if _DATA_ROOT else os.getcwd()
+pretrained_models_root = _PRET
+dataset_root = _DATASET
+output_root = _OUTPUT
+tmp_root = _TMP
+configs_root = _CONFIGS
+references_root = _REFS
+
 
 pretrained_sovits_name = {
-    "v1": "GPT_SoVITS/pretrained_models/s2G488k.pth",
-    "v2": "GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s2G2333k.pth",
-    "v3": "GPT_SoVITS/pretrained_models/s2Gv3.pth",  ###v3v4还要检查vocoder，算了。。。
-    "v4": "GPT_SoVITS/pretrained_models/gsv-v4-pretrained/s2Gv4.pth",
-    "v5dev": "GPT_SoVITS/pretrained_models/gsv-v5-pretrained/s2Gv5dev.pth",
-    "v5turbo": "GPT_SoVITS/pretrained_models/gsv-v5-pretrained/s2Gv5turbo.pth",
-    "v2Pro": "GPT_SoVITS/pretrained_models/v2Pro/s2Gv2Pro.pth",
-    "v2ProPlus": "GPT_SoVITS/pretrained_models/v2Pro/s2Gv2ProPlus.pth",
+    "v1": _pret("s2G488k.pth"),
+    "v2": _pret("gsv-v2final-pretrained/s2G2333k.pth"),
+    "v3": _pret("s2Gv3.pth"),  ###v3v4还要检查vocoder，算了。。。
+    "v4": _pret("gsv-v4-pretrained/s2Gv4.pth"),
+    "v5dev": _pret("gsv-v5-pretrained/s2Gv5dev.pth"),
+    "v5turbo": _pret("gsv-v5-pretrained/s2Gv5turbo.pth"),
+    "v2Pro": _pret("v2Pro/s2Gv2Pro.pth"),
+    "v2ProPlus": _pret("v2Pro/s2Gv2ProPlus.pth"),
 }
 
 pretrained_gpt_name = {
-    "v1": "GPT_SoVITS/pretrained_models/s1bert25hz-2kh-longer-epoch=68e-step=50232.ckpt",
-    "v2": "GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt",
-    "v3": "GPT_SoVITS/pretrained_models/s1v3.ckpt",
-    "v4": "GPT_SoVITS/pretrained_models/s1v3.ckpt",
-    "v5dev": "GPT_SoVITS/pretrained_models/s1v3.ckpt",
-    "v5turbo": "GPT_SoVITS/pretrained_models/s1v3.ckpt",
-    "v2Pro": "GPT_SoVITS/pretrained_models/s1v3.ckpt",
-    "v2ProPlus": "GPT_SoVITS/pretrained_models/s1v3.ckpt",
+    "v1": _pret("s1bert25hz-2kh-longer-epoch=68e-step=50232.ckpt"),
+    "v2": _pret("gsv-v2final-pretrained/s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt"),
+    "v3": _pret("s1v3.ckpt"),
+    "v4": _pret("s1v3.ckpt"),
+    "v5dev": _pret("s1v3.ckpt"),
+    "v5turbo": _pret("s1v3.ckpt"),
+    "v2Pro": _pret("s1v3.ckpt"),
+    "v2ProPlus": _pret("s1v3.ckpt"),
 }
 name2sovits_path = {
     i18n("不训练直接推v5dev底模！"): pretrained_sovits_name["v5dev"],
     i18n("不训练直接推v5turbo底模！"): pretrained_sovits_name["v5turbo"],
-    # i18n("不训练直接推v1底模！"): "GPT_SoVITS/pretrained_models/s2G488k.pth",
-    i18n("不训练直接推v2底模！"): "GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s2G2333k.pth",
-    # i18n("不训练直接推v3底模！"): "GPT_SoVITS/pretrained_models/s2Gv3.pth",
-    # i18n("不训练直接推v4底模！"): "GPT_SoVITS/pretrained_models/gsv-v4-pretrained/s2Gv4.pth",
-    i18n("不训练直接推v2Pro底模！"): "GPT_SoVITS/pretrained_models/v2Pro/s2Gv2Pro.pth",
-    i18n("不训练直接推v2ProPlus底模！"): "GPT_SoVITS/pretrained_models/v2Pro/s2Gv2ProPlus.pth",
+    # i18n("不训练直接推v1底模！"): pretrained_sovits_name["v1"],
+    i18n("不训练直接推v2底模！"): pretrained_sovits_name["v2"],
+    # i18n("不训练直接推v3底模！"): pretrained_sovits_name["v3"],
+    # i18n("不训练直接推v4底模！"): pretrained_sovits_name["v4"],
+    i18n("不训练直接推v2Pro底模！"): pretrained_sovits_name["v2Pro"],
+    i18n("不训练直接推v2ProPlus底模！"): pretrained_sovits_name["v2ProPlus"],
 }
 name2gpt_path = {
-    # i18n("不训练直接推v1底模！"):"GPT_SoVITS/pretrained_models/s1bert25hz-2kh-longer-epoch=68e-step=50232.ckpt",
-    i18n(
-        "不训练直接推v2底模！"
-    ): "GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt",
-    i18n("不训练直接推v3底模！"): "GPT_SoVITS/pretrained_models/s1v3.ckpt",
+    # i18n("不训练直接推v1底模！"): pretrained_gpt_name["v1"],
+    i18n("不训练直接推v2底模！"): pretrained_gpt_name["v2"],
+    i18n("不训练直接推v3底模！"): pretrained_gpt_name["v3"],
 }
-SoVITS_weight_root = [
-    "SoVITS_weights",
-    "SoVITS_weights_v2",
-    "SoVITS_weights_v3",
-    "SoVITS_weights_v4",
-    "SoVITS_weights_v5dev",
-    "SoVITS_weights_v5turbo",
-    "SoVITS_weights_v2Pro",
-    "SoVITS_weights_v2ProPlus",
+_WEIGHT_VERSIONS = [
+    "v1",
+    "v2",
+    "v3",
+    "v4",
+    "v5dev",
+    "v5turbo",
+    "v2Pro",
+    "v2ProPlus",
 ]
-GPT_weight_root = [
-    "GPT_weights",
-    "GPT_weights_v2",
-    "GPT_weights_v3",
-    "GPT_weights_v4",
-    "GPT_weights_v5dev",
-    "GPT_weights_v5turbo",
-    "GPT_weights_v2Pro",
-    "GPT_weights_v2ProPlus",
-]
-SoVITS_weight_version2root = {
-    "v1": "SoVITS_weights",
-    "v2": "SoVITS_weights_v2",
-    "v3": "SoVITS_weights_v3",
-    "v4": "SoVITS_weights_v4",
-    "v5dev": "SoVITS_weights_v5dev",
-    "v5turbo": "SoVITS_weights_v5turbo",
-    "v2Pro": "SoVITS_weights_v2Pro",
-    "v2ProPlus": "SoVITS_weights_v2ProPlus",
-}
-GPT_weight_version2root = {
-    "v1": "GPT_weights",
-    "v2": "GPT_weights_v2",
-    "v3": "GPT_weights_v3",
-    "v4": "GPT_weights_v4",
-    "v5dev": "GPT_weights_v5dev",
-    "v5turbo": "GPT_weights_v5turbo",
-    "v2Pro": "GPT_weights_v2Pro",
-    "v2ProPlus": "GPT_weights_v2ProPlus",
-}
+SoVITS_weight_root = [_weight_root("sovits", v) for v in _WEIGHT_VERSIONS]
+GPT_weight_root = [_weight_root("gpt", v) for v in _WEIGHT_VERSIONS]
+SoVITS_weight_version2root = {v: _weight_root("sovits", v) for v in _WEIGHT_VERSIONS}
+GPT_weight_version2root = {v: _weight_root("gpt", v) for v in _WEIGHT_VERSIONS}
 
 
 def custom_sort_key(s):
@@ -143,12 +164,12 @@ is_half = True if is_half_str.lower() == "true" else False
 is_share_str = os.environ.get("is_share", "False")
 is_share = True if is_share_str.lower() == "true" else False
 
-cnhubert_path = "GPT_SoVITS/pretrained_models/chinese-hubert-base"
-bert_path = "GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large"
-pretrained_sovits_path = "GPT_SoVITS/pretrained_models/s2G488k.pth"
-pretrained_gpt_path = "GPT_SoVITS/pretrained_models/s1bert25hz-2kh-longer-epoch=68e-step=50232.ckpt"
+cnhubert_path = _pret("chinese-hubert-base")
+bert_path = _pret("chinese-roberta-wwm-ext-large")
+pretrained_sovits_path = _pret("s2G488k.pth")
+pretrained_gpt_path = _pret("s1bert25hz-2kh-longer-epoch=68e-step=50232.ckpt")
 
-exp_root = "logs"
+exp_root = _EXP
 python_exec = sys.executable or "python"
 
 webui_port_main = 9874

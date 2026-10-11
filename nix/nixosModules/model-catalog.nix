@@ -4,8 +4,9 @@
 # so it can be imported and evaluated without a `pkgs` instance. The consumer
 # (`nixosModules/default.nix`) turns each entry into a derivation.
 #
-# Every entry describes ONE file or ONE directory of files below
-# `GPT_SoVITS/pretrained_models` (or `GPT_SoVITS/text` for G2PW). The hashes are
+# Every entry describes ONE file or ONE directory of files below the runtime data
+# root: `models/pretrained_models` for the TTS weights (or `g2pw` for G2PW). The
+# hashes are
 # the sha256 of the file contents, taken from the HuggingFace LFS `oid`
 # (`https://huggingface.co/api/models/<repo>/tree/main?recursive=1`) or, for the
 # few tiny non-LFS JSON files, computed by hashing the file itself. See
@@ -15,13 +16,13 @@
 # TTS models themselves (BERT/HuBERT/G2PW/fast-langdetect + per-version s1/s2G/
 # s2D/vocoder/BigVGAN/sv). It deliberately does NOT cover the auxiliary
 # toolboxes (ASR / faster-whisper / uvr5 / nltk_data / open_jtalk), whose
-# runtime downloads patch 0002 turns into "local path missing -> hard error".
+# runtime downloads the inlined download guards turn into "local path missing -> hard error".
 # Those stay offline-safe (no network) but non-functional until the user
 # supplies their data locally.
 { lib }:
 let
-  pretrainedDir = "GPT_SoVITS/pretrained_models";
-  textDir = "GPT_SoVITS/text";
+  pretrainedDir = "models/pretrained_models";
+  g2pwDir = "g2pw";
 
   # A single downloadable file. `name` is the link name below `installPath`.
   # `versions` lists the versions that need it ([] with `mandatory = true` for
@@ -121,7 +122,7 @@ let
   };
 in
 {
-  inherit pretrainedDir textDir repos;
+  inherit pretrainedDir g2pwDir repos;
 
   # G2PWModel.zip is a repo-root artifact (not below `pretrained_models`); its
   # archive top-level is a single `G2PWModel/` directory.
@@ -175,7 +176,7 @@ in
     {
       kind = "g2pw";
       name = "G2PWModel";
-      installPath = textDir;
+      installPath = g2pwDir;
       mandatory = true;
     }
     # fast_langdetect's language-ID model. `langsegmenter.py` points its cache
@@ -186,7 +187,7 @@ in
       name = "lid.176.bin";
       hfPath = "pretrained_models/fast_langdetect/lid.176.bin";
       msPath = "fast_langdetect/lid.176.bin";
-      installPath = "GPT_SoVITS/pretrained_models/fast_langdetect";
+      installPath = "models/pretrained_models/fast_langdetect";
       hash = "sha256-fmnsVFG8JhzHhE5J5HkqhdfwnAZ4nsgA/EpErsNidk4=";
       repo = "xxxxrt";
       mandatory = true;

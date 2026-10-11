@@ -64,6 +64,12 @@ let
       torchmetrics
       pydantic
       fastapi
+      # webui_ng（api_v2 能力重实现）显式依赖：uvicorn（单进程服务）+
+      # python-multipart（参考音频上传）+ soundfile（ogg 打包 / 参考音频 peaks）。
+      # 此前仅经 gradio/librosa 传递引入，脆弱。
+      uvicorn
+      python-multipart
+      soundfile
       faster-whisper
       torch
       torchaudio

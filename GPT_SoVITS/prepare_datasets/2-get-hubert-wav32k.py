@@ -45,8 +45,8 @@ import shutil
 def my_save(fea, path):  #####fix issue: torch.save doesn't support chinese path
     dir = os.path.dirname(path)
     name = os.path.basename(path)
-    # tmp_path="%s/%s%s.pth"%(dir,ttime(),i_part)
-    tmp_path = "%s%s.pth" % (ttime(), i_part)
+    # 临时文件必须落在目标目录内：nix 下 cwd 是只读 store，cwd 相对路径不可写。
+    tmp_path = "%s/%s%s.pth" % (dir, ttime(), i_part)
     torch.save(fea, tmp_path)
     shutil.move(tmp_path, "%s/%s" % (dir, name))
 

@@ -38,6 +38,9 @@ from transformers import AutoModelForMaskedLM, AutoTokenizer
 
 from tools.audio_sr import AP_BWE
 from tools.i18n.i18n import I18nAuto, scan_language_list
+
+# 运行期模型根（内聚布局见 config.py）；从 config 统一取，避免本文件再拼 cwd 相对路径。
+from config import configs_root, pretrained_models_root  # noqa: E402
 from TTS_infer_pack.text_segmentation_method import splits
 from TTS_infer_pack.TextPreprocessor import TextPreprocessor
 from sv import SV
@@ -298,61 +301,61 @@ class TTS_Config:
             "device": "cpu",
             "is_half": False,
             "version": "v1",
-            "t2s_weights_path": "GPT_SoVITS/pretrained_models/s1bert25hz-2kh-longer-epoch=68e-step=50232.ckpt",
-            "vits_weights_path": "GPT_SoVITS/pretrained_models/s2G488k.pth",
-            "cnhuhbert_base_path": "GPT_SoVITS/pretrained_models/chinese-hubert-base",
-            "bert_base_path": "GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large",
+            "t2s_weights_path": f"{pretrained_models_root}/s1bert25hz-2kh-longer-epoch=68e-step=50232.ckpt",
+            "vits_weights_path": f"{pretrained_models_root}/s2G488k.pth",
+            "cnhuhbert_base_path": f"{pretrained_models_root}/chinese-hubert-base",
+            "bert_base_path": f"{pretrained_models_root}/chinese-roberta-wwm-ext-large",
         },
         "v2": {
             "device": "cpu",
             "is_half": False,
             "version": "v2",
-            "t2s_weights_path": "GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt",
-            "vits_weights_path": "GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s2G2333k.pth",
-            "cnhuhbert_base_path": "GPT_SoVITS/pretrained_models/chinese-hubert-base",
-            "bert_base_path": "GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large",
+            "t2s_weights_path": f"{pretrained_models_root}/gsv-v2final-pretrained/s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt",
+            "vits_weights_path": f"{pretrained_models_root}/gsv-v2final-pretrained/s2G2333k.pth",
+            "cnhuhbert_base_path": f"{pretrained_models_root}/chinese-hubert-base",
+            "bert_base_path": f"{pretrained_models_root}/chinese-roberta-wwm-ext-large",
         },
         "v3": {
             "device": "cpu",
             "is_half": False,
             "version": "v3",
-            "t2s_weights_path": "GPT_SoVITS/pretrained_models/s1v3.ckpt",
-            "vits_weights_path": "GPT_SoVITS/pretrained_models/s2Gv3.pth",
-            "cnhuhbert_base_path": "GPT_SoVITS/pretrained_models/chinese-hubert-base",
-            "bert_base_path": "GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large",
+            "t2s_weights_path": f"{pretrained_models_root}/s1v3.ckpt",
+            "vits_weights_path": f"{pretrained_models_root}/s2Gv3.pth",
+            "cnhuhbert_base_path": f"{pretrained_models_root}/chinese-hubert-base",
+            "bert_base_path": f"{pretrained_models_root}/chinese-roberta-wwm-ext-large",
         },
         "v4": {
             "device": "cpu",
             "is_half": False,
             "version": "v4",
-            "t2s_weights_path": "GPT_SoVITS/pretrained_models/s1v3.ckpt",
-            "vits_weights_path": "GPT_SoVITS/pretrained_models/gsv-v4-pretrained/s2Gv4.pth",
-            "cnhuhbert_base_path": "GPT_SoVITS/pretrained_models/chinese-hubert-base",
-            "bert_base_path": "GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large",
+            "t2s_weights_path": f"{pretrained_models_root}/s1v3.ckpt",
+            "vits_weights_path": f"{pretrained_models_root}/gsv-v4-pretrained/s2Gv4.pth",
+            "cnhuhbert_base_path": f"{pretrained_models_root}/chinese-hubert-base",
+            "bert_base_path": f"{pretrained_models_root}/chinese-roberta-wwm-ext-large",
         },
         "v2Pro": {
             "device": "cpu",
             "is_half": False,
             "version": "v2Pro",
-            "t2s_weights_path": "GPT_SoVITS/pretrained_models/s1v3.ckpt",
-            "vits_weights_path": "GPT_SoVITS/pretrained_models/v2Pro/s2Gv2Pro.pth",
-            "cnhuhbert_base_path": "GPT_SoVITS/pretrained_models/chinese-hubert-base",
-            "bert_base_path": "GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large",
+            "t2s_weights_path": f"{pretrained_models_root}/s1v3.ckpt",
+            "vits_weights_path": f"{pretrained_models_root}/v2Pro/s2Gv2Pro.pth",
+            "cnhuhbert_base_path": f"{pretrained_models_root}/chinese-hubert-base",
+            "bert_base_path": f"{pretrained_models_root}/chinese-roberta-wwm-ext-large",
         },
         "v2ProPlus": {
             "device": "cpu",
             "is_half": False,
             "version": "v2ProPlus",
-            "t2s_weights_path": "GPT_SoVITS/pretrained_models/s1v3.ckpt",
-            "vits_weights_path": "GPT_SoVITS/pretrained_models/v2Pro/s2Gv2ProPlus.pth",
-            "cnhuhbert_base_path": "GPT_SoVITS/pretrained_models/chinese-hubert-base",
-            "bert_base_path": "GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large",
+            "t2s_weights_path": f"{pretrained_models_root}/s1v3.ckpt",
+            "vits_weights_path": f"{pretrained_models_root}/v2Pro/s2Gv2ProPlus.pth",
+            "cnhuhbert_base_path": f"{pretrained_models_root}/chinese-hubert-base",
+            "bert_base_path": f"{pretrained_models_root}/chinese-roberta-wwm-ext-large",
         },
     }
     for v5_variant in V5_VERSIONS:
         default_configs[v5_variant] = dict(
             default_configs["v4"], version=v5_variant,
-            vits_weights_path=f"GPT_SoVITS/pretrained_models/gsv-v5-pretrained/s2G{v5_variant}.pth",
+            vits_weights_path=f"{pretrained_models_root}/gsv-v5-pretrained/s2G{v5_variant}.pth",
         )
     configs: dict = None
     v1_languages: list = ["auto", "en", "zh", "ja", "all_zh", "all_ja"]
@@ -382,10 +385,14 @@ class TTS_Config:
     # "auto_yue",#多语种启动切分识别语种
 
     def __init__(self, configs: Union[dict, str] = None):
-        # 设置默认配置文件路径
-        configs_base_path: str = "GPT_SoVITS/configs/"
+        # 默认配置路径：configs_root 在 nix 模式下指向可写的 <data>/configs，
+        # 未设 GPT_SOVITS_DATA_DIR 时恰为上游的 "GPT_SoVITS/configs"。
+        configs_base_path: str = configs_root + "/"
         os.makedirs(configs_base_path, exist_ok=True)
         self.configs_path: str = os.path.join(configs_base_path, "tts_infer.yaml")
+        # 生成配置的写回目标。默认同 self.configs_path；若调用方传入只读路径
+        # （如 store 里的 tts_infer.yaml），只用于读取，写回重定向到 configs_root。
+        self._configs_write_path: str = self.configs_path
 
         if configs in ["", None]:
             if not os.path.exists(self.configs_path):
@@ -396,8 +403,16 @@ class TTS_Config:
         if isinstance(configs, str):
             self.configs_path = configs
             configs: dict = self._load_configs(self.configs_path)
+            if os.environ.get("GPT_SOVITS_DATA_DIR"):
+                self._configs_write_path = os.path.join(configs_base_path, "tts_infer.yaml")
+            else:
+                self._configs_write_path = configs
 
         assert isinstance(configs, dict)
+        # 合并前先留一份“计算默认值”（路径已按数据根解析），供缺失路径 fallback
+        # 使用；不能用合并后的 self.default_configs —— 传入的 yaml 里可能含旧
+        # cwd 相对路径，会把默认值覆盖回非 nix 布局。
+        self._fallback_defaults = deepcopy(self.default_configs)
         configs_ = deepcopy(self.default_configs)
         configs_.update(configs)
         self.configs: dict = configs_.get("custom", configs_["v2"])
@@ -425,16 +440,16 @@ class TTS_Config:
         self.use_vocoder: bool = False
 
         if (self.t2s_weights_path in [None, ""]) or (not os.path.exists(self.t2s_weights_path)):
-            self.t2s_weights_path = self.default_configs[version]["t2s_weights_path"]
+            self.t2s_weights_path = self._fallback_defaults[version]["t2s_weights_path"]
             print(f"fall back to default t2s_weights_path: {self.t2s_weights_path}")
         if (self.vits_weights_path in [None, ""]) or (not os.path.exists(self.vits_weights_path)):
-            self.vits_weights_path = self.default_configs[version]["vits_weights_path"]
+            self.vits_weights_path = self._fallback_defaults[version]["vits_weights_path"]
             print(f"fall back to default vits_weights_path: {self.vits_weights_path}")
         if (self.bert_base_path in [None, ""]) or (not os.path.exists(self.bert_base_path)):
-            self.bert_base_path = self.default_configs[version]["bert_base_path"]
+            self.bert_base_path = self._fallback_defaults[version]["bert_base_path"]
             print(f"fall back to default bert_base_path: {self.bert_base_path}")
         if (self.cnhuhbert_base_path in [None, ""]) or (not os.path.exists(self.cnhuhbert_base_path)):
-            self.cnhuhbert_base_path = self.default_configs[version]["cnhuhbert_base_path"]
+            self.cnhuhbert_base_path = self._fallback_defaults[version]["cnhuhbert_base_path"]
             print(f"fall back to default cnhuhbert_base_path: {self.cnhuhbert_base_path}")
         self.update_configs()
 
@@ -465,7 +480,7 @@ class TTS_Config:
             configs["custom"] = self.update_configs()
 
         if configs_path is None:
-            configs_path = self.configs_path
+            configs_path = getattr(self, "_configs_write_path", None) or self.configs_path
         with open(configs_path, "w") as f:
             yaml.dump(configs, f)
 
@@ -581,7 +596,8 @@ class TTS:
         version, model_version, if_lora_v3 = get_sovits_version_from_path_fast(weights_path)
         if "Pro" in model_version:
             self.init_sv_model()
-        path_sovits = self.configs.default_configs[model_version]["vits_weights_path"]
+        # 用合并前快照（纯数据根路径），避免 store yaml 的逐版本旧路径污染底模定位。
+        path_sovits = self.configs._fallback_defaults[model_version]["vits_weights_path"]
 
         if if_lora_v3 == True and os.path.exists(path_sovits) == False:
             info = path_sovits + i18n("SoVITS %s 底模缺失，无法加载相应 LoRA 权重" % model_version)
@@ -711,7 +727,7 @@ class TTS:
                 self.empty_cache()
 
             self.vocoder = BigVGAN.from_pretrained(
-                "%s/GPT_SoVITS/pretrained_models/models--nvidia--bigvgan_v2_24khz_100band_256x" % (now_dir,),
+                os.path.join(pretrained_models_root, "models--nvidia--bigvgan_v2_24khz_100band_256x"),
                 use_cuda_kernel=False,
             )
             # remove weight norm in the model and set to eval mode
@@ -745,8 +761,11 @@ class TTS:
             )
             self.vocoder.remove_weight_norm()
             state_dict_g = torch.load(
-                "%s/GPT_SoVITS/pretrained_models/gsv-%s-pretrained/vocoder.pth" %
-                (now_dir, "v5" if version in V5_VERSIONS else version),
+                os.path.join(
+                    pretrained_models_root,
+                    "gsv-%s-pretrained" % ("v5" if version in V5_VERSIONS else version),
+                    "vocoder.pth",
+                ),
                 map_location="cpu",
                 weights_only=False,
             )

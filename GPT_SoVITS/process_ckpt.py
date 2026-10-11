@@ -12,7 +12,8 @@ i18n = I18nAuto()
 def my_save(fea, path):  #####fix issue: torch.save doesn't support chinese path
     dir = os.path.dirname(path)
     name = os.path.basename(path)
-    tmp_path = "%s.pth" % (ttime())
+    # 临时文件落目标目录内（cwd 在 nix 模式下是只读 store，不能写相对 cwd 路径）。
+    tmp_path = "%s/%s%s.pth" % (dir, ttime(), name)
     torch.save(fea, tmp_path)
     shutil.move(tmp_path, "%s/%s" % (dir, name))
 
