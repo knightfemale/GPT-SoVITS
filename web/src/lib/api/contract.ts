@@ -31,7 +31,18 @@ export interface ApiClient {
   switchModel(req: SwitchRequest, signal?: AbortSignal): Promise<SwitchResponse>;
 
   references(signal?: AbortSignal): Promise<Reference[]>;
-  uploadReference(file: File, name?: string): Promise<Reference>;
+  /** 上传参考音频；可选附带名称、转写文本与语言（V3/v5 合成需要文本）。 */
+  uploadReference(
+    file: File,
+    opts?: { name?: string; text?: string; lang?: string },
+  ): Promise<Reference>;
+  /** 更新参考音频的名称 / 转写文本 / 语言（PATCH /api/references/{id}）。 */
+  updateReference(
+    id: string,
+    patch: { name?: string; text?: string; lang?: string },
+  ): Promise<Reference>;
+  /** 删除参考音频（DELETE /api/references/{id}，同时移除后端记录与文件）。 */
+  deleteReference(id: string): Promise<void>;
 
   /** 非流式合成，解析为单个音频 Blob。 */
   tts(req: TTSRequest, signal?: AbortSignal): Promise<Blob>;

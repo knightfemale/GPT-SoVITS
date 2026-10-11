@@ -112,6 +112,11 @@ export function checkPairing(
   };
 }
 
+/** V3 家族（v3/v4/v5 系列）共用 `s2v3+` 结构，合成时需要参考音频对应的文本。 */
+export function isV3Family(version: WeightVersion | null): boolean {
+  return version != null && FAMILY[version] === "s2v3+";
+}
+
 export function partitionByVersion(entries: ModelEntry[]): Map<WeightVersion, ModelEntry[]> {
   const map = new Map<WeightVersion, ModelEntry[]>();
   for (const entry of entries) {

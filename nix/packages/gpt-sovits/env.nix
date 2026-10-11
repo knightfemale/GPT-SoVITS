@@ -36,6 +36,8 @@ let
       scipy
       tensorboard
       librosa
+      # v3/v4/v5 合成路径用 resampy 做参考音频重采样（TTS.py:_resampy_gpu_filter）
+      resampy
       numba
       pytorch-lightning
       gradio

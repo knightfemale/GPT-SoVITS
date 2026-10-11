@@ -1,4 +1,4 @@
-import { Headphones, Pencil, Play, Trash2 } from "lucide-react";
+import { FileText, Headphones, Pencil, Play, Trash2 } from "lucide-react";
 import type { Reference } from "@/lib/api/types";
 import { referenceAudioUrl } from "@/lib/references";
 import { usePlayer } from "@/store/player";
@@ -13,9 +13,17 @@ interface ReferenceCardProps {
   onSelect?: (reference: Reference) => void;
   onDelete?: (reference: Reference) => void;
   onTrim?: (reference: Reference) => void;
+  onEditText?: (reference: Reference) => void;
 }
 
-export function ReferenceCard({ reference, selected, onSelect, onDelete, onTrim }: ReferenceCardProps) {
+export function ReferenceCard({
+  reference,
+  selected,
+  onSelect,
+  onDelete,
+  onTrim,
+  onEditText,
+}: ReferenceCardProps) {
   const { play } = usePlayer();
   const url = referenceAudioUrl(reference);
   const playable = Boolean(url);
@@ -64,9 +72,21 @@ export function ReferenceCard({ reference, selected, onSelect, onDelete, onTrim 
 
       <MiniWave peaks={reference.peaks} />
 
-      {reference.text && (
+      {reference.text ? (
         <p className="line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{reference.text}</p>
-      )}
+      ) : onEditText ? (
+        <button
+          type="button"
+          className="flex items-center gap-1 text-left text-[11px] text-primary/80 transition-colors hover:text-primary"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEditText(reference);
+          }}
+        >
+          <FileText className="size-3" />
+          未填写参考文本，点击补充
+        </button>
+      ) : null}
 
       <div className="flex items-center justify-between border-t border-border pt-2 text-[11px] text-muted-foreground">
         <span className="flex items-center gap-1">
@@ -74,6 +94,20 @@ export function ReferenceCard({ reference, selected, onSelect, onDelete, onTrim 
           {selected ? "已选为参考" : "参考音频"}
         </span>
         <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          {onEditText && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              title="编辑参考文本"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEditText(reference);
+              }}
+            >
+              <FileText />
+            </Button>
+          )}
           {onTrim && (
             <Button
               type="button"

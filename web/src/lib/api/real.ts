@@ -51,13 +51,19 @@ export function createRealClient(): ApiClient {
       http.post<SwitchResponse>("/api/models/switch", req, signal),
 
     references: (signal) => http.get<Reference[]>("/api/references", signal),
-    uploadReference: async (file: File, name?: string) => {
+    uploadReference: async (file: File, opts?: { name?: string; text?: string; lang?: string }) => {
       const form = new FormData();
       form.append("file", file);
-      if (name) form.append("name", name);
+      if (opts?.name) form.append("name", opts.name);
+      if (opts?.text) form.append("text", opts.text);
+      if (opts?.lang) form.append("lang", opts.lang);
       return http.post<Reference>("/api/references", form);
       // 注意：http.post 对 formData 走 multipart（见 client.ts）
     },
+    updateReference: (id: string, patch: { name?: string; text?: string; lang?: string }) =>
+      http.patch<Reference>(`/api/references/${encodeURIComponent(id)}`, patch),
+    deleteReference: (id: string) =>
+      http.del<void>(`/api/references/${encodeURIComponent(id)}`),
 
     tts: async (req: TTSRequest, signal) => {
       const res = await postRaw("/api/tts", req, signal);

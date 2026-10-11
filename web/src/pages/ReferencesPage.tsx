@@ -3,7 +3,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Library, Mic, Plus, Search, Upload } from "lucide-react";
 import { toast } from "sonner";
 import type { Reference } from "@/lib/api/types";
-import { decodeAudioBlob, computePeaks } from "@/lib/audio/wav";
 import { useApiClient } from "@/hooks/useApi";
 import { queryKeys, useReferences } from "@/hooks/queries";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -12,6 +11,7 @@ import { ReferenceCard } from "@/components/audio/ReferenceCard";
 import { Dropzone } from "@/components/audio/Dropzone";
 import { AudioRecorder } from "@/components/audio/AudioRecorder";
 import { TrimmerDialog } from "@/components/audio/TrimmerDialog";
+import { ReferenceTextDialog } from "@/components/audio/ReferenceTextDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,7 @@ export function ReferencesPage() {
   const [query, setQuery] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [trimming, setTrimming] = useState<Reference | null>(null);
+  const [editing, setEditing] = useState<Reference | null>(null);
 
   const filtered = useMemo(() => {
     const list = data ?? [];
@@ -44,44 +45,45 @@ export function ReferencesPage() {
   });
 
   const handleRecord = async (blob: Blob) => {
-    let peaks: number[] = [0.3];
-    let duration = 0;
+    const name = `录音-${new Date().toLocaleTimeString("zh-CN", { hour12: false })}.webm`;
     try {
-      const buffer = await decodeAudioBlob(blob);
-      peaks = computePeaks(buffer);
-      duration = buffer.duration;
+      const ref = await api.uploadReference(new File([blob], name, { type: blob.type }), { name });
+      queryClient.setQueryData<Reference[]>(queryKeys.references, (prev) => [ref, ...(prev ?? [])]);
+      setAddOpen(false);
+      toast.success("录音已加入音频库");
     } catch {
-      /* 保留占位 */
+      toast.error("录音上传失败");
     }
-    const local: Reference = {
-      id: `ref-rec-${Date.now().toString(36)}`,
-      name: `录音-${new Date().toLocaleTimeString("zh-CN", { hour12: false })}.webm`,
-      path: `recordings/rec-${Date.now()}.webm`,
-      audioUrl: URL.createObjectURL(blob),
-      peaks,
-      duration,
-      lang: "zh",
-    };
-    queryClient.setQueryData<Reference[]>(queryKeys.references, (prev) => [local, ...(prev ?? [])]);
-    setAddOpen(false);
-    toast.success("录音已加入音频库");
   };
 
-  const remove = (reference: Reference) => {
-    queryClient.setQueryData<Reference[]>(queryKeys.references, (prev) =>
-      (prev ?? []).filter((r) => r.id !== reference.id),
-    );
-    toast("已从列表移除（本地）");
+  const remove = async (reference: Reference) => {
+    try {
+      await api.deleteReference(reference.id);
+      queryClient.setQueryData<Reference[]>(queryKeys.references, (prev) =>
+        (prev ?? []).filter((r) => r.id !== reference.id),
+      );
+      toast.success("已删除参考音频");
+    } catch {
+      toast.error("删除失败");
+    }
   };
 
-  const applyTrim = (reference: Reference, blob: Blob, peaks: number[], duration: number) => {
-    queryClient.setQueryData<Reference[]>(queryKeys.references, (prev) =>
-      (prev ?? []).map((r) =>
-        r.id === reference.id
-          ? { ...r, audioUrl: URL.createObjectURL(blob), peaks, duration, name: r.name.replace(/(\.[^.]+)?$/, "-trim$1") || r.name }
-          : r,
-      ),
-    );
+  const applyTrim = async (reference: Reference, blob: Blob, _peaks: number[], _duration: number) => {
+    const trimName = reference.name.replace(/(\.[^.]+)?$/, "-trim$1") || reference.name;
+    try {
+      const created = await api.uploadReference(new File([blob], trimName, { type: blob.type }), {
+        name: trimName,
+        text: reference.text,
+        lang: reference.lang,
+      });
+      await api.deleteReference(reference.id);
+      queryClient.setQueryData<Reference[]>(queryKeys.references, (prev) =>
+        (prev ?? []).map((r) => (r.id === reference.id ? created : r)),
+      );
+      toast.success("已保存裁剪结果");
+    } catch {
+      toast.error("裁剪保存失败");
+    }
   };
 
   return (
@@ -133,6 +135,7 @@ export function ReferencesPage() {
               reference={reference}
               onDelete={remove}
               onTrim={(ref) => setTrimming(ref)}
+              onEditText={(ref) => setEditing(ref)}
             />
           ))}
         </div>
@@ -175,6 +178,12 @@ export function ReferencesPage() {
         open={Boolean(trimming)}
         onOpenChange={(open) => !open && setTrimming(null)}
         onApply={(blob, peaks, duration) => trimming && applyTrim(trimming, blob, peaks, duration)}
+      />
+
+      <ReferenceTextDialog
+        reference={editing}
+        open={Boolean(editing)}
+        onOpenChange={(open) => !open && setEditing(null)}
       />
     </div>
   );

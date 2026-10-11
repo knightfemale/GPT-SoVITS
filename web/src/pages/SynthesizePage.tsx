@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { AlertCircle, Radio, Sparkles, Square, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import type { TTSRequest } from "@/lib/api/types";
-import type { WeightVersion } from "@/lib/versions";
+import { isV3Family, versionLabel, type WeightVersion } from "@/lib/versions";
 import { useApiClient } from "@/hooks/useApi";
 import { useReferences } from "@/hooks/queries";
 import { useSettings } from "@/store/settings";
@@ -58,7 +58,8 @@ export function SynthesizePage() {
 
   const streaming = params.streaming_mode !== 0 && params.streaming_mode !== false;
   const activeSegments = segments.filter((s) => s.text.trim());
-  const canSynthesize = activeSegments.length > 0 && Boolean(selectedRef) && !busy && !isLocked;
+  const v3NeedsText = isV3Family(version) && selectedRef != null && !selectedRef.text?.trim();
+  const canSynthesize = activeSegments.length > 0 && Boolean(selectedRef) && !busy && !isLocked && !v3NeedsText;
 
   const patchParams = (patch: Partial<TTSRequest>) => {
     setParams((prev) => ({ ...prev, ...patch }));
@@ -76,8 +77,8 @@ export function SynthesizePage() {
       ...params,
       text: segment.text,
       text_lang: segment.lang,
-      prompt_text: selectedRef?.text ?? params.prompt_text ?? "",
-      prompt_lang: params.prompt_lang ?? settings.promptLang,
+      prompt_text: selectedRef?.text?.trim() ?? "",
+      prompt_lang: selectedRef?.lang ?? params.prompt_lang ?? settings.promptLang,
       ref_audio_path: selectedRef?.path ?? "",
     }),
     [params, selectedRef, settings.promptLang],
@@ -215,6 +216,14 @@ export function SynthesizePage() {
                 }
                 disabled={busy}
               />
+              {v3NeedsText && (
+                <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-[11px] text-warning">
+                  <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                  <span>
+                    当前模型版本为 {versionLabel(version)}，合成需要参考音频对应的文本。请为所选参考音频补充文本，否则会提示“prompt_text cannot be empty”。
+                  </span>
+                </div>
+              )}
             </CardContent>
           </Card>
 

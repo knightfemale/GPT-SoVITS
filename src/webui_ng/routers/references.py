@@ -8,13 +8,16 @@ from __future__ import annotations
 
 import json
 import logging
+import mimetypes
 import os
 import subprocess
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 router = APIRouter(tags=["references"])
 log = logging.getLogger("webui_ng.routers.references")
@@ -42,6 +45,17 @@ def _ref_dir() -> str:
 
 def _store_path() -> str:
     return os.path.join(_data_root(), "webui_ng_references.json")
+
+
+def _bound_ref_path(raw: Optional[str]) -> str:
+    """把参考音频路径限定在 ``references`` 目录内（越界/缺失 404）。"""
+    ref_dir = os.path.realpath(_ref_dir())
+    candidate = os.path.realpath(raw) if raw else ""
+    if not candidate or (candidate != ref_dir and not candidate.startswith(ref_dir + os.sep)):
+        raise HTTPException(status_code=404, detail="reference audio unavailable")
+    if not os.path.isfile(candidate):
+        raise HTTPException(status_code=404, detail="reference audio file missing")
+    return candidate
 
 
 def _load_store() -> List[Dict[str, Any]]:
@@ -144,6 +158,8 @@ async def list_references() -> List[Dict[str, Any]]:
 async def upload_reference(
     file: UploadFile = File(...),
     name: Optional[str] = Form(None),
+    text: Optional[str] = Form(None),
+    lang: Optional[str] = Form(None),
 ) -> Dict[str, Any]:
     ref_id = uuid.uuid4().hex[:12]
     original_name = file.filename or f"{ref_id}.bin"
@@ -174,10 +190,64 @@ async def upload_reference(
         "path": final_path,
         "peaks": peaks,
         "duration": duration,
-        "lang": None,
-        "text": None,
+        "lang": lang or None,
+        "text": text or None,
     }
     items = _load_store()
     items.append(item)
     _save_store(items)
     return item
+
+
+class ReferencePatch(BaseModel):
+    name: Optional[str] = None
+    text: Optional[str] = None
+    lang: Optional[str] = None
+
+
+@router.patch("/references/{ref_id}")
+async def update_reference(ref_id: str, patch: ReferencePatch) -> Dict[str, Any]:
+    """更新参考音频的名称 / 转写文本 / 语言（V3/v5 的 prompt_text 依赖它）。"""
+    items = _load_store()
+    for item in items:
+        if item.get("id") == ref_id:
+            if patch.name is not None:
+                item["name"] = patch.name
+            if patch.text is not None:
+                item["text"] = patch.text
+            if patch.lang is not None:
+                item["lang"] = patch.lang
+            _save_store(items)
+            return item
+    raise HTTPException(status_code=404, detail=f"reference not found: {ref_id}")
+
+
+@router.get("/references/{ref_id}/audio")
+async def get_reference_audio(ref_id: str) -> FileResponse:
+    """试听：返回参考音频文件（限定在 references 目录内）。"""
+    items = _load_store()
+    item = next((x for x in items if x.get("id") == ref_id), None)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"reference not found: {ref_id}")
+    target = _bound_ref_path(item.get("path"))
+    media_type = mimetypes.guess_type(target)[0] or "application/octet-stream"
+    return FileResponse(target, media_type=media_type)
+
+
+@router.delete("/references/{ref_id}")
+async def delete_reference(ref_id: str) -> Dict[str, Any]:
+    """删除参考音频（store 记录 + 尽力删除文件）。"""
+    items = _load_store()
+    kept = [x for x in items if x.get("id") != ref_id]
+    if len(kept) == len(items):
+        raise HTTPException(status_code=404, detail=f"reference not found: {ref_id}")
+    _save_store(kept)
+    for item in items:
+        if item.get("id") == ref_id:
+            path = item.get("path")
+            try:
+                if path and os.path.isfile(path):
+                    os.unlink(path)
+            except OSError:
+                log.warning("failed to unlink reference file: %s", path)
+    return {"ok": True}

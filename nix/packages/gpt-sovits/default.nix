@@ -170,6 +170,7 @@ pkgs.stdenvNoCC.mkDerivation {
     makeWrapper ${pythonEnv}/bin/python $out/bin/gpt-sovits-webui-ng \
       --add-flags "-m webui_ng.app" \
       --prefix PATH : "${pythonEnv}/bin" \
+      --prefix PATH : "${lib.makeBinPath [ pkgs.ffmpeg ]}" \
       --set GPT_SOVITS_WEB_DIST "${web}" \
       --run '${ngRunScript}'
 

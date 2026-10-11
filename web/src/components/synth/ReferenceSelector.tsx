@@ -1,16 +1,16 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Library, Mic, Play, Search, Upload } from "lucide-react";
+import { AlertCircle, Library, Mic, Play, Search, Upload } from "lucide-react";
 import { toast } from "sonner";
 import type { Reference } from "@/lib/api/types";
 import { referenceAudioUrl } from "@/lib/references";
-import { decodeAudioBlob, computePeaks } from "@/lib/audio/wav";
 import { useApiClient } from "@/hooks/useApi";
 import { queryKeys, useReferences } from "@/hooks/queries";
 import { usePlayer } from "@/store/player";
 import { Dropzone } from "@/components/audio/Dropzone";
 import { AudioRecorder } from "@/components/audio/AudioRecorder";
 import { ReferenceCard } from "@/components/audio/ReferenceCard";
+import { ReferenceTextDialog } from "@/components/audio/ReferenceTextDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -32,6 +32,7 @@ export function ReferenceSelector({ value, refName, onChange, disabled }: Refere
   const { data: references } = useReferences();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState<Reference | null>(null);
 
   const selected = references?.find((r) => r.id === value) ?? null;
 
@@ -59,32 +60,21 @@ export function ReferenceSelector({ value, refName, onChange, disabled }: Refere
   };
 
   const handleRecord = async (blob: Blob) => {
-    let peaks: number[] = [0.3];
-    let duration = 0;
+    const name = `录音-${new Date().toLocaleTimeString("zh-CN", { hour12: false })}.webm`;
     try {
-      const buffer = await decodeAudioBlob(blob);
-      peaks = computePeaks(buffer);
-      duration = buffer.duration;
+      const ref = await api.uploadReference(new File([blob], name, { type: blob.type }), { name });
+      queryClient.setQueryData<Reference[]>(queryKeys.references, (prev) => [ref, ...(prev ?? [])]);
+      onChange(ref);
+      setOpen(false);
+      toast.success("录音已设为参考音频");
     } catch {
-      /* 解码失败保留占位 peaks */
+      toast.error("录音上传失败");
     }
-    const local: Reference = {
-      id: `ref-rec-${Date.now().toString(36)}`,
-      name: `录音-${new Date().toLocaleTimeString("zh-CN", { hour12: false })}.webm`,
-      path: `recordings/rec-${Date.now()}.webm`,
-      audioUrl: URL.createObjectURL(blob),
-      peaks,
-      duration,
-      lang: "zh",
-    };
-    queryClient.setQueryData<Reference[]>(queryKeys.references, (prev) => [local, ...(prev ?? [])]);
-    onChange(local);
-    setOpen(false);
-    toast.success("录音已设为参考音频");
   };
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-border bg-surface/40 p-2.5">
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-surface/40 p-2.5">
       <div
         className={cn(
           "flex size-9 shrink-0 items-center justify-center rounded-md",
@@ -164,6 +154,7 @@ export function ReferenceSelector({ value, refName, onChange, disabled }: Refere
                       reference={ref}
                       selected={ref.id === value}
                       onSelect={handleSelect}
+                      onEditText={(r) => setEditing(r)}
                     />
                   ))}
                 </div>
@@ -184,6 +175,27 @@ export function ReferenceSelector({ value, refName, onChange, disabled }: Refere
           </Tabs>
         </DialogContent>
       </Dialog>
+      </div>
+
+      {selected && !selected.text?.trim() && (
+        <button
+          type="button"
+          onClick={() => setEditing(selected)}
+          className="flex w-full items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-2 text-left text-[11px] text-warning transition-colors hover:bg-warning/15"
+        >
+          <AlertCircle className="size-3.5 shrink-0" />
+          <span>该参考音频还没有文本，v3 / v5 等模型合成需要它，点击补充</span>
+        </button>
+      )}
+
+      <ReferenceTextDialog
+        reference={editing}
+        open={Boolean(editing)}
+        onOpenChange={(open) => !open && setEditing(null)}
+        onSaved={(updated) => {
+          if (updated.id === value) onChange(updated);
+        }}
+      />
     </div>
   );
 }
