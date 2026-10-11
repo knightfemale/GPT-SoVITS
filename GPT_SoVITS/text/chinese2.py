@@ -32,21 +32,16 @@ if is_g2pw:
 
     parent_directory = os.path.dirname(current_file_path)
 
-    # G2PW 模型资产与 BERT 底模都位于运行期数据根（设 GPT_SOVITS_DATA_DIR 时）；
-    # 未设时保持上游的 cwd 相对字面量。
+    # BERT 底模位于运行期数据根（设 GPT_SOVITS_DATA_DIR 时）；未设时保持上游的
+    # cwd 相对字面量。G2PWModel 资产已内建进打包源码树（cwd 相对即命中），无需重定向。
     _data_root = os.environ.get("GPT_SOVITS_DATA_DIR")
-    _g2pw_model_dir = os.environ.get("GPT_SOVITS_G2PW_MODEL_DIR") or (
-        os.path.join(os.path.abspath(_data_root), "g2pw", "G2PWModel")
-        if _data_root
-        else "GPT_SoVITS/text/G2PWModel"
-    )
     _bert_model_source = os.environ.get("bert_path") or (
         os.path.join(os.path.abspath(_data_root), "models", "pretrained_models", "chinese-roberta-wwm-ext-large")
         if _data_root
         else "GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large"
     )
     g2pw = G2PWPinyin(
-        model_dir=_g2pw_model_dir,
+        model_dir="GPT_SoVITS/text/G2PWModel",
         model_source=_bert_model_source,
         v_to_u=False,
         neutral_tone_with_five=True,

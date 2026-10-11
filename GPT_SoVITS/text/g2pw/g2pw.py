@@ -12,17 +12,10 @@ from pypinyin.contrib.tone_convert import to_tone
 from .onnx_api import G2PWOnnxConverter
 
 current_file_path = os.path.dirname(__file__)
-# 只读字典（.rep）随代码；pickle/md5 是运行期缓存、需要可写目录——设
-# GPT_SOVITS_DATA_DIR 时落到 <data>/g2pw（可用 GPT_SOVITS_G2PW_CACHE 覆盖），
-# 未设时保持代码旁（上游行为）。
-_G2PW_CACHE_DIR = os.environ.get("GPT_SOVITS_G2PW_CACHE")
-if not _G2PW_CACHE_DIR:
-    _data_root = os.environ.get("GPT_SOVITS_DATA_DIR")
-    _G2PW_CACHE_DIR = os.path.join(os.path.abspath(_data_root), "g2pw") if _data_root else current_file_path
-CACHE_PATH = os.path.join(_G2PW_CACHE_DIR, "polyphonic.pickle")
+CACHE_PATH = os.path.join(current_file_path, "polyphonic.pickle")
 PP_DICT_PATH = os.path.join(current_file_path, "polyphonic.rep")
 PP_FIX_DICT_PATH = os.path.join(current_file_path, "polyphonic-fix.rep")
-MD5_PATH = os.path.join(_G2PW_CACHE_DIR, "polyphonic.md5")
+MD5_PATH = os.path.join(current_file_path, "polyphonic.md5")
 
 def get_file_md5(file_path):
     if not os.path.exists(file_path):
@@ -128,7 +121,6 @@ def _remove_dup_and_empty(lst_list):
 
 
 def cache_dict(polyphonic_dict, file_path):
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
     with open(file_path, "wb") as pickle_file:
         pickle.dump(polyphonic_dict, pickle_file)
 

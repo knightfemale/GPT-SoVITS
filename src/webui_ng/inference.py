@@ -314,19 +314,15 @@ class Engine:
 
     # -- 公共 API（在事件循环中调用） -------------------------------------- #
     async def ensure_loaded(self) -> None:
-        """确保 TTS 内核已加载（首次请求时在 GPU 门内按需构造）。
+        """确认 TTS 内核已加载；未加载则抛 ``ModelsNotLoadedError``。
 
-        已加载时**立即返回**（无队列往返）。构造失败抛 ``ModelsNotLoadedError``；
-        失败**不缓存**坏实例，后续请求会重试。
+        服务启动**不启用任何模型**：内核只在 ``switch_models`` 显式选择权重时按需
+        构造。此处不再自动加载「默认版本」——否则默认版本底模缺失即 503。
         """
-        if self._tts is not None:
-            return
-        loop = asyncio.get_running_loop()
-        fut: "asyncio.Future[Any]" = loop.create_future()
-        task = _Task(kind="load", future=fut)
-        async with self._gpu_gate:
-            await self._queue.put(task)
-            await fut
+        if self._tts is None:
+            raise ModelsNotLoadedError(
+                "no model loaded; select a model via /api/models/switch first"
+            )
 
     async def synthesize(self, req: Dict[str, Any]) -> bytes:
         """非流式合成，返回完整音频字节。"""
@@ -435,9 +431,7 @@ class Engine:
                 break
             self._current = task
             try:
-                if task.kind == "load":
-                    self._do_load(task)
-                elif task.kind == "switch":
+                if task.kind == "switch":
                     self._do_switch(task)
                 elif task.kind == "tts":
                     self._do_tts(task)
@@ -533,47 +527,54 @@ class Engine:
             self._reject(task, exc)
 
     # -- 内部：内核调用 ----------------------------------------------------- #
-    def _ensure_loaded(self):
-        """在 worker 线程内按需构造 TTS 内核并缓存（线程安全：仅 worker 写）。
+    def _build_tts(self, sovits_path: str, gpt_path: Optional[str]):
+        """用显式权重路径构造 TTS 内核（不依赖任何「默认版本」底模）。
 
-        调用方（worker）此时正持有 GPU 门（由请求协程 ``async with`` 保证），故
-        构造与推理天然串行。构造失败**不缓存**坏实例并抛出 ``ModelsNotLoadedError``，
-        使后续请求可重试。
+        先读一份配置取得 device/is_half/bert/cnhuhbert 等运行参数（构造
+        ``TTS_Config`` 本身**不**加载权重），再把版本与权重路径覆盖为请求值后构造
+        ``TTS``。这样即使未安装 yaml 里写死的默认版本，也能按用户所选权重启动。
         """
-        if self._tts is not None:
-            return self._tts
-        try:
-            TTS, TTS_Config = _load_tts_classes()
-            tts_config = TTS_Config(self._tts_config_path)
-            tts = TTS(tts_config)
-        except Exception as exc:  # noqa: BLE001 - 明确原因回传
-            self._load_error = str(exc)
-            raise ModelsNotLoadedError(f"models not loaded: {exc}") from exc
-        self._tts = tts
-        self._load_error = None
-        cfg = getattr(tts, "configs", None)
-        log.info(
-            "Engine TTS loaded lazily (device=%s, is_half=%s, version=%s)",
-            getattr(cfg, "device", "?"),
-            getattr(cfg, "is_half", "?"),
-            getattr(cfg, "version", "?"),
-        )
-        return tts
+        from GPT_SoVITS.process_ckpt import get_sovits_version_from_path_fast  # noqa: WPS433
 
-    def _do_load(self, task: _Task) -> None:
-        self._ensure_loaded()
-        self._resolve(task, None)
+        TTS, TTS_Config = _load_tts_classes()
+        base = TTS_Config(self._tts_config_path)
+        custom = dict(base.configs)
+        _version, model_version, _if_lora = get_sovits_version_from_path_fast(sovits_path)
+        custom["version"] = model_version
+        custom["vits_weights_path"] = sovits_path
+        if gpt_path:
+            custom["t2s_weights_path"] = gpt_path
+        return TTS(TTS_Config({"custom": custom}))
 
     def _do_switch(self, task: _Task) -> None:
         if task.cancelled.is_set():
             self._reject(task, RuntimeError("model switch canceled"))
             return
-        self._ensure_loaded()
-        if task.sovits_path:
-            self._tts.init_vits_weights(task.sovits_path)
-        if task.gpt_path:
-            self._tts.init_t2s_weights(task.gpt_path)
+        try:
+            if self._tts is None:
+                if not task.sovits_path:
+                    raise ModelsNotLoadedError(
+                        "no model loaded; a SoVITS weights path is required to load one"
+                    )
+                self._tts = self._build_tts(task.sovits_path, task.gpt_path)
+            else:
+                if task.sovits_path:
+                    self._tts.init_vits_weights(task.sovits_path)
+                if task.gpt_path:
+                    self._tts.init_t2s_weights(task.gpt_path)
+        except ModelsNotLoadedError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - 明确原因回传
+            self._load_error = str(exc)
+            raise ModelsNotLoadedError(f"models not loaded: {exc}") from exc
+        self._load_error = None
         cfg = self.configs
+        log.info(
+            "Engine TTS loaded/switched (device=%s, is_half=%s, version=%s)",
+            getattr(cfg, "device", "?"),
+            getattr(cfg, "is_half", "?"),
+            getattr(cfg, "version", "?"),
+        )
         self._resolve(
             task,
             {
@@ -592,7 +593,10 @@ class Engine:
                 self._reject(task, RuntimeError("tts canceled"))
             return
 
-        self._ensure_loaded()
+        if self._tts is None:
+            raise ModelsNotLoadedError(
+                "no model loaded; select a model via /api/models/switch first"
+            )
         gen = self._tts.run(task.req)
 
         if task.is_stream and task.out_queue is not None:

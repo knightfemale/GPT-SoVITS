@@ -13,6 +13,9 @@
   pkgs,
   pythonEnv,
   acceleration ? "cpu",
+  # G2PWModel 归档 URL（内建进打包源码树）。默认 HF；调用方（NixOS 模块）按
+  # `modelSource` 传入 hf-mirror / modelscope 镜像。
+  g2pwUrl ? null,
   ...
 }:
 
@@ -69,6 +72,62 @@ let
     filter = path: type: isExcluded path type;
   };
 
+  # 静态目录（纯 lib 数据）：复用其中的 G2PWModel 归档 URL/hash。
+  catalog = import ../../nixosModules/model-catalog.nix { inherit lib; };
+
+  # G2PWModel 资产（HF / hf-mirror / modelscope 之一），构建期注入源码树。
+  g2pwModelUrl = if g2pwUrl != null then g2pwUrl else catalog.g2pwZip.hf;
+
+  g2pwModel = pkgs.runCommand "G2PWModel" { nativeBuildInputs = [ pkgs.unzip ]; } ''
+    mkdir -p $out
+    unzip -q ${
+      pkgs.fetchurl {
+        url = g2pwModelUrl;
+        hash = catalog.g2pwZip.hash;
+      }
+    } -d $out
+    mv $out/G2PWModel/* $out/
+    rmdir $out/G2PWModel
+  '';
+
+  # 打包源码 = 过滤后的仓库 + 内建 G2PWModel（cwd 相对 `GPT_SoVITS/text/G2PWModel`
+  # 直接命中，代码无需 env/重定向）+ 预计算 g2pw 缓存（polyphonic.pickle/md5，令
+  # 运行期 md5 自洽、绝不写盘）。整棵树只读。
+  #
+  # 预计算算法与运行期 `g2pw.get_dict()` 一致；仓库里已提交的 polyphonic.md5 与当前
+  # `.rep` 不一致（实测 e511…bda1… vs 13b2…），故必须重算。
+  sourceWithG2PW = pkgs.runCommand "gpt-sovits-source-g2pw" { } ''
+    cp -a ${source} $out
+    chmod -R u+w $out
+    rm -rf $out/GPT_SoVITS/text/G2PWModel
+    ln -sn ${g2pwModel} $out/GPT_SoVITS/text/G2PWModel
+    ${pkgs.python3}/bin/python - "$out/GPT_SoVITS/text/g2pw" <<'PY'
+    import hashlib, os, pickle, sys
+
+    d = sys.argv[1]
+
+    def md5(path):
+        h = hashlib.md5()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    dct = {}
+    for name in ("polyphonic.rep", "polyphonic-fix.rep"):
+        with open(os.path.join(d, name), encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    key, value_str = line.split(":", 1)
+                    dct[key.strip()] = eval(value_str.strip())
+    with open(os.path.join(d, "polyphonic.pickle"), "wb") as f:
+        pickle.dump(dct, f)
+    with open(os.path.join(d, "polyphonic.md5"), "w", encoding="utf-8") as f:
+        f.write(md5(os.path.join(d, "polyphonic.rep")) + md5(os.path.join(d, "polyphonic-fix.rep")))
+    PY
+    chmod -R a-w $out
+  '';
+
   # GPU（WSL CUDA）下补上驱动库路径：预编译 CUDA wheels 需要 libcuda.so。
   # WSL 把驱动放在 /usr/lib/wsl/lib（不在 ldconfig 默认搜索路径内），
   # NixOS 则在 /run/opengl-driver/lib。CPU 分支拼接为空串，保持逐字节不变。
@@ -84,7 +143,7 @@ let
   # 路径天然解析）；运行期数据目录经 GPT_SOVITS_DATA_DIR 暴露给进程（默认回退到
   # 旧的 GPT_SOVITS_WORKDIR，再回退到源码根）；webui_ng 经 `python -m webui_ng.app`
   # 启动。
-  ngRun = "cd ${source} && export GPT_SOVITS_DATA_DIR=\"\${GPT_SOVITS_DATA_DIR:-\${GPT_SOVITS_WORKDIR:-${source}}}\" && export PYTHONPATH=\"$PWD/src:$PWD:$PWD/GPT_SoVITS/BigVGAN:$PWD/tools:$PWD/tools/asr:$PWD/GPT_SoVITS:$PWD/tools/uvr5\${PYTHONPATH:+:$PYTHONPATH}\"";
+  ngRun = "cd ${sourceWithG2PW} && export GPT_SOVITS_DATA_DIR=\"\${GPT_SOVITS_DATA_DIR:-\${GPT_SOVITS_WORKDIR:-${sourceWithG2PW}}}\" && export PYTHONPATH=\"$PWD/src:$PWD:$PWD/GPT_SoVITS/BigVGAN:$PWD/tools:$PWD/tools/asr:$PWD/GPT_SoVITS:$PWD/tools/uvr5\${PYTHONPATH:+:$PYTHONPATH}\"";
 
   ngRunScript = ngRun + lib.optionalString (acceleration == "cuda") ("\n" + driverLibPath);
 
@@ -118,8 +177,8 @@ pkgs.stdenvNoCC.mkDerivation {
   '';
 
   passthru = {
-    # 只读打包源码根（运行的 cwd / PYTHONPATH 基）。
-    inherit source;
+    # 只读打包源码根（运行的 cwd / PYTHONPATH 基），已内建 G2PWModel + g2pw 缓存。
+    source = sourceWithG2PW;
     # 前端构建产物，供需要单独引用 SPA 的场合。
     inherit web;
   };

@@ -5,7 +5,7 @@
 # (`nixosModules/default.nix`) turns each entry into a derivation.
 #
 # Every entry describes ONE file or ONE directory of files below the runtime data
-# root: `models/pretrained_models` for the TTS weights (or `g2pw` for G2PW). The
+# root: `models/pretrained_models` for the TTS weights. The
 # hashes are
 # the sha256 of the file contents, taken from the HuggingFace LFS `oid`
 # (`https://huggingface.co/api/models/<repo>/tree/main?recursive=1`) or, for the
@@ -22,7 +22,6 @@
 { lib }:
 let
   pretrainedDir = "models/pretrained_models";
-  g2pwDir = "g2pw";
 
   # A single downloadable file. `name` is the link name below `installPath`.
   # `versions` lists the versions that need it ([] with `mandatory = true` for
@@ -122,7 +121,7 @@ let
   };
 in
 {
-  inherit pretrainedDir g2pwDir repos;
+  inherit pretrainedDir repos;
 
   # G2PWModel.zip is a repo-root artifact (not below `pretrained_models`); its
   # archive top-level is a single `G2PWModel/` directory.
@@ -173,12 +172,6 @@ in
         })
       ];
     })
-    {
-      kind = "g2pw";
-      name = "G2PWModel";
-      installPath = g2pwDir;
-      mandatory = true;
-    }
     # fast_langdetect's language-ID model. `langsegmenter.py` points its cache
     # dir at `pretrained_models/fast_langdetect`; without this file
     # `fast_langdetect.load_with_download` would fetch it over plain HTTP

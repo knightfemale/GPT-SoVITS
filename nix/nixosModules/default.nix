@@ -16,8 +16,18 @@ let
   # bin/gpt-sovits-webui-ng entrypoint.
   # `acceleration` selects the CPU or the CUDA (prebuilt wheels) variant;
   # an explicit `package` overrides this entirely.
+  # G2PWModel 归档（构建期内建进打包源码树），镜像随 `modelSource` 选择。
+  g2pwUrl =
+    if cfg.modelSource == "modelscope" then
+      catalog.g2pwZip.modelscope
+    else if cfg.modelSource == "hf-mirror" then
+      catalog.g2pwZip.hfMirror
+    else
+      catalog.g2pwZip.hf;
+
   defaultPackage = inputs.self.packages.${system}.gpt-sovits.override {
     inherit (cfg) acceleration;
+    inherit g2pwUrl;
   };
 
   # By default a StateDirectory is used; anything else needs its own directory
@@ -68,14 +78,6 @@ let
       name = baseNameOf f.hfPath;
     };
 
-  g2pwUrl =
-    if cfg.modelSource == "modelscope" then
-      catalog.g2pwZip.modelscope
-    else if cfg.modelSource == "hf-mirror" then
-      catalog.g2pwZip.hfMirror
-    else
-      catalog.g2pwZip.hf;
-
   # One `{ installPath, name, drv }` per catalogue entry that survives filtering.
   catalogItems = lib.concatMap (
     e:
@@ -88,21 +90,6 @@ let
         drv = pkgs.runCommand e.name { } (
           "mkdir -p $out\n" + lib.concatMapStringsSep "\n" (f: "ln -s ${fetchFile f} $out/${f.name}") files
         );
-      }
-    else if e.kind == "g2pw" then
-      lib.optional (fileEntrySelected e) {
-        inherit (e) installPath name;
-        drv = pkgs.runCommand "G2PWModel" { nativeBuildInputs = [ pkgs.unzip ]; } ''
-          mkdir -p $out
-          unzip -q ${
-            pkgs.fetchurl {
-              url = g2pwUrl;
-              hash = catalog.g2pwZip.hash;
-            }
-          } -d $out
-          mv $out/G2PWModel/* $out/
-          rmdir $out/G2PWModel
-        '';
       }
     else
       lib.optional (fileEntrySelected e && trainingOk e) {
@@ -144,7 +131,7 @@ let
 
   # Remove stale store symlinks below the managed install paths before relinking
   # so no stale links are left behind after an upgrade. ONLY dirs under
-  # `models/**` are swept; other install paths (e.g. `g2pw`) are handled by
+  # `models/**` are swept; any other install path is handled by
   # `modelSymlinks`, which removes the exact entry it recreates.
   staleSymlinkSweep = lib.concatMapStringsSep "\n" (p: ''
     dstReal="$(readlink -f ${lib.escapeShellArg cfg.dataDir} 2>/dev/null || true)"
@@ -178,7 +165,7 @@ let
   #   models/  <- pretrained_models + SoVITS_weights*/ + GPT_weights*/ + uvr5_weights
   #   train/   <- dataset/ + logs/
   #   output/  <- generated audio
-  #   tmp/ references/ g2pw/ huggingface/ modelscope/
+  #   tmp/ references/ configs/ huggingface/ modelscope/
   #
   # The wrapper/Python code resolves these through config.py, so no cwd farming is
   # required.
@@ -218,7 +205,7 @@ let
       mkdir -p "$dst"/models/pretrained_models "$dst"/models/uvr5_weights \
         "$dst"/train/dataset "$dst"/train/logs \
         "$dst"/output "$dst"/tmp "$dst"/tmp/ja_userdic \
-        "$dst"/references "$dst"/configs "$dst"/g2pw \
+        "$dst"/references "$dst"/configs \
         "$dst"/huggingface "$dst"/modelscope
       for w in ${weights}; do mkdir -p "$dst/models/$w"; done
     ''

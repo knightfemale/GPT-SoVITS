@@ -65,6 +65,10 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
 
   if (formData) {
     payload = formData;
+  } else if (body instanceof FormData) {
+    // 直接传 FormData（multipart）时不能 JSON 序列化，也不设 Content-Type，
+    // 由浏览器自动带上 multipart boundary。
+    payload = body;
   } else if (body !== undefined) {
     headers["Content-Type"] = "application/json";
     payload = JSON.stringify(body);
